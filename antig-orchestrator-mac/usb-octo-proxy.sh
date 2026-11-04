@@ -38,6 +38,7 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 
 echo "USB interface: $IFACE"
+printf '%s\n' "$IFACE" > /tmp/usb-octo-iface
 DEFIF="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
 echo "Host default interface: ${DEFIF:-none}"
 
@@ -70,10 +71,21 @@ cat > /tmp/usb-octo-socks.py <<'PY'
 import os, socket, struct, threading, select
 
 PORT = int(os.environ.get('SOCKS_PORT', '1080'))
-IFACE = os.environ.get('SOCKS_IF', '')
-IFINDEX = socket.if_nametoindex(IFACE)
+IFACE_ENV = os.environ.get('SOCKS_IF', '')
+IFACE_FILE = '/tmp/usb-octo-iface'
 BUFSIZE = 65536
 IP_BOUND_IF = getattr(socket, 'IP_BOUND_IF', 25)
+
+
+def ifindex():
+    iface = IFACE_ENV
+    try:
+        value = open(IFACE_FILE).read().strip()
+        if value:
+            iface = value
+    except Exception:
+        pass
+    return socket.if_nametoindex(iface)
 
 
 def recv_exact(conn, n):
@@ -166,7 +178,7 @@ def handle(conn):
             return
 
         out = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        out.setsockopt(socket.IPPROTO_IP, IP_BOUND_IF, IFINDEX)
+        out.setsockopt(socket.IPPROTO_IP, IP_BOUND_IF, ifindex())
         out.settimeout(20)
         try:
             out.connect(dst)
@@ -191,7 +203,7 @@ def main():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(('127.0.0.1', PORT))
     srv.listen(200)
-    print(f'socks5 127.0.0.1:{PORT} -> {IFACE} (index {IFINDEX})', flush=True)
+    print(f'socks5 127.0.0.1:{PORT} -> {IFACE_ENV}', flush=True)
     while True:
         conn, _ = srv.accept()
         threading.Thread(target=handle, args=(conn,), daemon=True).start()
@@ -206,12 +218,22 @@ PID=$!
 echo "$PID" > /tmp/usb-octo-socks.pid
 sleep 2
 
-cat > /tmp/usb-octo-route.sh <<ROUTE
+pkill -f '/tmp/usb-octo-route.sh' 2>/dev/null || true
+cat > /tmp/usb-octo-route.sh <<'ROUTE'
 #!/bin/sh
-while kill -0 $PID 2>/dev/null; do
-  route delete -net 0/1 >/dev/null 2>&1 || true
-  route delete -net 128.0/1 >/dev/null 2>&1 || true
-  route add -net default -ifscope "$IFACE" -interface "$IFACE" >/dev/null 2>&1 || true
+while :; do
+  BT="$(curl -s -m 2 http://127.0.0.1:9400/api/status || true)"
+  IP="$(printf '%s' "$BT" | sed -n 's/.*"clientIP":"\([^"]*\)".*/\1/p')"
+  IFACE=""
+  if [ -n "$IP" ]; then
+    IFACE="$(ifconfig | awk -v ip="$IP" '/^[a-z0-9]+:/{i=$1; sub(":","",i)} $1=="inet" && $2==ip {print i; exit}')"
+  fi
+  if [ -n "$IFACE" ]; then
+    printf '%s\n' "$IFACE" > /tmp/usb-octo-iface
+    route delete -net 0/1 >/dev/null 2>&1 || true
+    route delete -net 128.0/1 >/dev/null 2>&1 || true
+    route add -net default -ifscope "$IFACE" -interface "$IFACE" >/dev/null 2>&1 || true
+  fi
   sleep 2
 done
 ROUTE

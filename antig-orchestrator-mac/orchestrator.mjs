@@ -52,6 +52,9 @@ const SIGNUP_URL = 'https://console.cloud.google.com/freetrial'
 const PROFILE_PREFIX = 'GCP Intern Auto'
 const SESSION_TIMEOUT_MS = Number(process.env.ORCH_SESSION_TIMEOUT_MS || 15 * 60 * 1000)
 const AIRPLANE_SECONDS = Number(process.env.ORCH_AIRPLANE_SECONDS || 6)
+const PROXY_SERVER = process.env.ORCH_PROXY_SERVER || ''
+const PROXY_PORT = process.env.ORCH_PROXY_PORT || (String(PROXY_SERVER).match(/:(\d+)/) || [])[1] || '1080'
+const ROTATE_USB = process.env.ORCH_ROTATE_USB === '1'
 const MAX_RUNS = Number(process.env.ORCH_MAX_RUNS || 0)
 const BATCH_SIZE = Math.max(1, Number(process.env.ORCH_BATCH || 2))
 const EXT_BASE_ENV = process.env.ORCH_EXT_ID || ''
@@ -674,9 +677,49 @@ async function ensureTether() {
   return net
 }
 
+function proxyEgress(timeoutMs = 12000) {
+  try {
+    const out = execFileSync('curl', [
+      '-4', '-s', '-m', String(Math.max(2, Math.round(timeoutMs / 1000))),
+      '--socks5-hostname', `127.0.0.1:${PROXY_PORT}`,
+      'https://api.ipify.org',
+    ], { encoding: 'utf8', timeout: timeoutMs + 2000 }).trim()
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(out) ? out : null
+  } catch {
+    return null
+  }
+}
+
+async function rotateProxyIp(beforeIp) {
+  const before = beforeIp || (await proxyEgress()) || 'unknown'
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    log(`USB IP cycle ${attempt}/3 (${AIRPLANE_SECONDS}s)...`)
+    try {
+      await android.reset({ duration: AIRPLANE_SECONDS })
+    } catch (e) {
+      log(`USB cycle error: ${e.message}`)
+    }
+    await android.tetherAction({ action: 'on' }).catch(() => {})
+
+    let last = null
+    for (let wait = 0; wait < 20; wait += 1) {
+      await sleep(2500)
+      const ip = await proxyEgress()
+      if (ip) last = ip
+      if (ip && ip !== before) {
+        return { before, after: ip, network: null }
+      }
+    }
+    log(`USB IP unchanged (${last || 'none'}), retrying`)
+    await sleep(2000)
+  }
+  throw new Error('could not get a new USB proxy IP')
+}
+
 async function cycleIp(beforeIp) {
   const requireUsb = config.android.requireUsbTether !== false
   if (!requireUsb) {
+    if (ROTATE_USB) return rotateProxyIp(beforeIp)
     const net = await hostNetwork()
     if (!net.internet) throw new Error('internet is not reachable')
     return { before: beforeIp || net.egressIp, after: net.egressIp, network: net }
@@ -813,7 +856,7 @@ async function main() {
     log(`===== batch ${batch}${MAX_RUNS ? '/' + MAX_RUNS : ''} (${BATCH_SIZE} profile${BATCH_SIZE > 1 ? 's' : ''}) =====`)
     try {
       await ensureTether()
-      const before = (await hostNetwork()).egressIp
+      const before = ROTATE_USB ? (await proxyEgress()) : (await hostNetwork()).egressIp
       const cycled = await cycleIp(before)
       log(`IP ${cycled.before} -> ${cycled.after} (USB tether)`)
 
