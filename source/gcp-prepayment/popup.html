@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GCP Account Prepayment</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <h1>GCP Account Prepayment</h1>
+    <span class="version">v1.0.16</span>
+  </div>
+
+  <div class="body">
+    <label class="label" for="email">Account email</label>
+    <input type="text" id="email" placeholder="name@domain.com" autocomplete="off" spellcheck="false">
+
+    <button id="btn-login" class="btn primary">Login</button>
+    <button id="btn-pause" class="btn warn">Pause automation</button>
+    <button id="btn-logout" class="btn danger">Logout</button>
+
+    <label class="checkrow">
+      <input type="checkbox" id="auto-prepay" checked>
+      <span>After login, tap <strong>Make a payment</strong> and pay the fixed ₹1,000 prepayment</span>
+    </label>
+
+    <button id="btn-pay" class="btn subtle">Make a payment (₹1,000)</button>
+
+    <div class="status" id="status">Enter an email and press Login.</div>
+
+    <div class="hint">
+      The verification code is fetched automatically and entered for you.
+      After sign-in the billing page opens and the ₹1,000 prepayment is filled in.
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

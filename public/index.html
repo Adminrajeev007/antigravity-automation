@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>antiG · Octo profiles</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">AG</div>
+        <div class="brand-copy">
+          <strong>antiG</strong>
+          <small>Octo browser control</small>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <p>Workspace</p>
+        <button class="nav-item active" data-view="overview">Overview</button>
+        <button class="nav-item" data-view="profiles">Profiles</button>
+        <button class="nav-item" data-view="extensions">Extensions</button>
+        <button class="nav-item" data-view="connectivity">Connectivity</button>
+        <button class="nav-item" data-view="automation">Automation</button>
+        <button class="nav-item" data-view="activity">Activity</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <span class="dot off" id="sidebar-dot"></span>
+        <div>
+          <strong id="sidebar-state">Checking…</strong>
+          <small id="sidebar-port">Octo local API</small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <span class="eyebrow">Workspace</span>
+          <strong id="view-title">Overview</strong>
+        </div>
+        <div class="topbar-actions">
+          <div class="live-pill">
+            <span class="dot off" id="live-dot"></span>
+            <span id="live-text">Checking Octo…</span>
+          </div>
+          <button class="button secondary" id="open-octo">Open Octo</button>
+          <button class="button secondary" id="refresh">Refresh</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="view active" data-panel="overview">
+          <section class="live-board" id="live-board">
+            <div class="live-head">
+              <div class="live-badge"><span class="live-pulse"></span> LIVE HOME</div>
+              <div class="live-clock" id="lv-clock">--:--:--</div>
+              <div class="live-link" id="lv-octo">connecting to Octo…</div>
+            </div>
+
+            <div class="live-stats">
+              <article class="live-stat">
+                <span>Egress IP</span>
+                <strong id="lv-ip">…</strong>
+                <small id="lv-ip-detail">waiting for first check</small>
+              </article>
+              <article class="live-stat">
+                <span>USB Tether</span>
+                <strong id="lv-usb">…</strong>
+                <small id="lv-usb-detail">BetterTether</small>
+              </article>
+              <article class="live-stat">
+                <span>Current Profile</span>
+                <strong id="lv-profile">…</strong>
+                <small id="lv-profile-detail">none running</small>
+              </article>
+              <article class="live-stat">
+                <span>Profiles</span>
+                <strong id="lv-profiles">0 / 0</strong>
+                <small>running / total</small>
+              </article>
+              <article class="live-stat">
+                <span>Phone</span>
+                <strong id="lv-phone">…</strong>
+                <small id="lv-phone-detail">ADB link</small>
+              </article>
+              <article class="live-stat">
+                <span>Sheet Results</span>
+                <strong id="lv-records">0</strong>
+                <small id="lv-records-detail">0 passed · 0 failed</small>
+              </article>
+            </div>
+
+            <div class="live-grid">
+              <div class="live-panel">
+                <div class="live-panel-head"><h3>Now</h3><span id="lv-op-count">0 active</span></div>
+                <div id="lv-ops" class="live-list"></div>
+              </div>
+              <div class="live-panel">
+                <div class="live-panel-head"><h3>Live feed</h3><span>auto</span></div>
+                <div id="lv-events" class="live-list"></div>
+              </div>
+              <div class="live-panel">
+                <div class="live-panel-head"><h3>Profile radar</h3><span id="lv-radar-count">0</span></div>
+                <div id="lv-radar" class="live-radar"></div>
+              </div>
+            </div>
+
+            <div class="live-panel live-success-panel">
+              <div class="live-panel-head">
+                <h3>Successful emails</h3>
+                <div class="live-panel-tools">
+                  <span id="lv-success-count">0</span>
+                  <button class="text-button" type="button" id="lv-copy-success">Copy</button>
+                </div>
+              </div>
+              <div id="lv-success-list" class="live-success-list"></div>
+            </div>
+          </section>
+
+          <div class="metrics">
+            <article class="metric">
+              <span class="metric-label">Profiles</span>
+              <strong id="metric-total">0</strong>
+              <small>total in this account</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Running</span>
+              <strong id="metric-running">0</strong>
+              <small>open browsers</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Extensions</span>
+              <strong id="metric-extensions">0</strong>
+              <small>installed</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Octo API</span>
+              <strong id="metric-state">…</strong>
+              <small id="metric-state-hint">checking local API</small>
+            </article>
+          </div>
+
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Create profile</h2>
+                  <p>Create a fresh fingerprint, attach an extension, then optionally open it.</p>
+                </div>
+              </div>
+              <form id="create-form" class="form">
+                <div class="field">
+                  <label for="profile-name">Profile name</label>
+                  <input id="profile-name" name="name" placeholder="e.g. account-01" required autocomplete="off">
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="profile-os">Operating system</label>
+                    <select id="profile-os" name="os">
+                      <option value="mac">macOS</option>
+                      <option value="windows">Windows</option>
+                      <option value="linux">Linux</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="profile-arch">Architecture</label>
+                    <select id="profile-arch" name="osArch">
+                      <option value="x86">x86</option>
+                      <option value="arm">ARM</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="profile-extension">Extension</label>
+                  <select id="profile-extension" name="extension">
+                    <option value="">No extension</option>
+                  </select>
+                  <small id="extension-hint">Extensions are attached before launch and load with the profile.</small>
+                </div>
+                <div class="field">
+                  <label for="profile-proxy">Proxy</label>
+                  <input id="profile-proxy" name="proxy" placeholder="direct or socks5://user:pass@host:1080" autocomplete="off">
+                  <small>Leave blank to use the configured default.</small>
+                </div>
+                <label class="checkbox">
+                  <input type="checkbox" name="launch" id="profile-launch">
+                  <span>Launch after creation</span>
+                </label>
+                <div class="form-actions">
+                  <button class="button primary" type="submit" id="create-button">Create profile</button>
+                </div>
+                <div id="create-result" class="result hidden" role="status"></div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Recent profiles</h2>
+                  <p>Latest profiles with quick actions.</p>
+                </div>
+                <button class="text-button" data-goto="profiles">View all</button>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Profile</th>
+                      <th>State</th>
+                      <th>Extensions</th>
+                      <th>Proxy</th>
+                      <th class="actions-head">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recent-profiles"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-panel="profiles">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Profiles</h2>
+                <p>Launch, stop, manage extensions, or delete profiles.</p>
+              </div>
+              <input id="profile-search" class="search" type="search" placeholder="Search name or UUID" autocomplete="off">
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Profile</th>
+                    <th>State</th>
+                    <th>Extensions</th>
+                    <th>Proxy</th>
+                    <th class="actions-head">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="profiles-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-panel="extensions">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Extensions</h2>
+                <p>Installed in the Octo account. Attach them to a profile from Manage.</p>
+              </div>
+            </div>
+            <div id="extensions-grid" class="extension-grid"></div>
+          </section>
+        </section>
+
+        <section class="view" data-panel="connectivity">
+          <div class="metrics">
+            <article class="metric">
+              <span class="metric-label">Device</span>
+              <strong id="android-device-state">…</strong>
+              <small id="android-device-detail">checking ADB</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Airplane mode</span>
+              <strong id="android-airplane">…</strong>
+              <small>phone state</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">USB tethering</span>
+              <strong id="android-tether">…</strong>
+              <small id="android-usb-state">phone state</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Internet</span>
+              <strong id="android-internet">…</strong>
+              <small id="android-egress">checking egress</small>
+            </article>
+          </div>
+
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Airplane mode</h2>
+                  <p>Toggle flight mode over ADB, or cycle it for a set duration.</p>
+                </div>
+              </div>
+              <div class="form">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="airplane-duration">Cycle duration (seconds)</label>
+                    <input id="airplane-duration" type="number" min="1" max="300" value="10">
+                  </div>
+                  <div class="field">
+                    <label for="android-device">Device</label>
+                    <select id="android-device">
+                      <option value="">Auto-detect</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-actions">
+                  <button class="button primary" id="airplane-on" type="button">Turn on</button>
+                  <button class="button" id="airplane-off" type="button">Turn off</button>
+                  <button class="button" id="airplane-cycle" type="button">Cycle on/off</button>
+                </div>
+                <div id="airplane-result" class="result hidden" role="status"></div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>USB tethering</h2>
+                  <p>Control the phone's USB tethering switch and inspect the connection.</p>
+                </div>
+              </div>
+              <div class="form">
+                <div class="form-actions">
+                  <button class="button primary" id="tether-on" type="button">Tether on</button>
+                  <button class="button" id="tether-off" type="button">Tether off</button>
+                  <button class="button" id="tether-status" type="button">Refresh status</button>
+                  <button class="button" id="network-reset" type="button">Reset network</button>
+                </div>
+                <div id="tether-result" class="result hidden" role="status"></div>
+              </div>
+            </section>
+          </div>
+
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Phone status</h2>
+                  <p>Live values read over ADB.</p>
+                </div>
+                <button class="text-button" id="android-refresh" type="button">Refresh</button>
+              </div>
+              <div class="status-grid" id="android-status-grid"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Host connection</h2>
+                  <p>Internet reachability and default route on this machine.</p>
+                </div>
+              </div>
+              <div class="status-grid" id="host-status-grid"></div>
+            </section>
+          </div>
+
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Last IP toggle</h2>
+                  <p>Host egress before and after the last profile rotation.</p>
+                </div>
+              </div>
+              <div class="status-grid" id="rotation-ip-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-panel="automation">
+          <div class="metrics">
+            <article class="metric">
+              <span class="metric-label">Accessibility</span>
+              <strong id="hid-trusted">…</strong>
+              <small>macOS permission</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Helper</span>
+              <strong id="hid-helper">…</strong>
+              <small>native/hid.swift</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Screen</span>
+              <strong id="hid-screen">…</strong>
+              <small id="hid-screen-detail">main display</small>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Cursor</span>
+              <strong id="hid-cursor">—</strong>
+              <small>last HID action</small>
+            </article>
+          </div>
+
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Keyboard</h2>
+                  <p>Type text or send key combos to the focused macOS app.</p>
+                </div>
+                <button class="button" id="hid-request" type="button">Request permission</button>
+              </div>
+              <div class="form">
+                <div class="field">
+                  <label for="hid-app">Activate app</label>
+                  <div class="inline-field">
+                    <input id="hid-app" placeholder="Octo Browser">
+                    <button class="button" id="hid-activate" type="button">Activate</button>
+                  </div>
+                  <small>Use a running app name or bundle id, then send keys.</small>
+                </div>
+                <div class="field">
+                  <label for="hid-text">Text to type</label>
+                  <textarea id="hid-text" rows="3" placeholder="Hello from antiG"></textarea>
+                </div>
+                <div class="form-actions">
+                  <button class="button primary" id="hid-type" type="button">Type text</button>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="hid-combo">Key or combo</label>
+                    <input id="hid-combo" placeholder="cmd+shift+t">
+                  </div>
+                  <div class="field">
+                    <label for="hid-repeat">Repeat</label>
+                    <input id="hid-repeat" type="number" min="1" max="1000" value="1">
+                  </div>
+                </div>
+                <div class="form-actions">
+                  <button class="button" id="hid-send-key" type="button">Send key</button>
+                </div>
+                <div id="hid-result" class="result hidden" role="status"></div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Mouse</h2>
+                  <p>Move, click, scroll, or drag at global screen coordinates.</p>
+                </div>
+              </div>
+              <div class="form">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="hid-x">X</label>
+                    <input id="hid-x" type="number" value="500">
+                  </div>
+                  <div class="field">
+                    <label for="hid-y">Y</label>
+                    <input id="hid-y" type="number" value="300">
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="hid-button">Button</label>
+                    <select id="hid-button">
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                      <option value="middle">Middle</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="hid-count">Click count</label>
+                    <input id="hid-count" type="number" min="1" max="3" value="1">
+                  </div>
+                </div>
+                <div class="form-actions">
+                  <button class="button" id="hid-move" type="button">Move</button>
+                  <button class="button primary" id="hid-click" type="button">Click</button>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="hid-dx">Scroll X</label>
+                    <input id="hid-dx" type="number" value="0">
+                  </div>
+                  <div class="field">
+                    <label for="hid-dy">Scroll Y</label>
+                    <input id="hid-dy" type="number" value="-300">
+                  </div>
+                </div>
+                <div class="form-actions">
+                  <button class="button" id="hid-scroll" type="button">Scroll</button>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="hid-from-x">From X</label>
+                    <input id="hid-from-x" type="number" value="400">
+                  </div>
+                  <div class="field">
+                    <label for="hid-from-y">From Y</label>
+                    <input id="hid-from-y" type="number" value="300">
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="hid-to-x">To X</label>
+                    <input id="hid-to-x" type="number" value="800">
+                  </div>
+                  <div class="field">
+                    <label for="hid-to-y">To Y</label>
+                    <input id="hid-to-y" type="number" value="300">
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="hid-duration">Drag duration (ms)</label>
+                  <input id="hid-duration" type="number" min="0" max="60000" value="400">
+                </div>
+                <div class="form-actions">
+                  <button class="button" id="hid-drag" type="button">Drag</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-panel="activity">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Activity</h2>
+                <p>Recent operations performed by the dashboard, HTTP API, and MCP server.</p>
+              </div>
+            </div>
+            <div id="runs-list" class="run-list"></div>
+          </section>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <header class="modal-head">
+        <div>
+          <span class="eyebrow">Manage</span>
+          <h2 id="modal-title">Profile</h2>
+          <code id="modal-uuid"></code>
+        </div>
+        <button class="icon-button" id="modal-close" aria-label="Close">×</button>
+      </header>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

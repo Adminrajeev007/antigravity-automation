@@ -1,0 +1,17 @@
+{
+  "name": "antig",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Octo Browser profile control plus Android connectivity and macOS HID automation.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "mcp": "node mcp/server.mjs",
+    "test": "node --test",
+    "package:extensions": "node scripts/package-extensions.mjs"
+  }
+}

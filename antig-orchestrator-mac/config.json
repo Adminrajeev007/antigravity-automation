@@ -1,0 +1,10 @@
+{
+  "octo": {
+    "defaultProxy": "direct"
+  },
+  "android": {
+    "adbPath": "runtime/platform-tools/adb",
+    "requireUsbTether": true,
+    "usbTetherTimeoutMs": 90000
+  }
+}
