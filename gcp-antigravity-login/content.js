@@ -202,15 +202,30 @@ function hasOtpInput() {
   return !!document.querySelector('input[name="pinInput"], input[inputmode="numeric"], input[autocomplete="one-time-code"], input[type="tel"], input[aria-label*="code" i], input[aria-label*="verification" i]');
 }
 
+function hasCaptchaInput() {
+  const input = document.querySelector('#captchaInput, input#ca, input[name="ca"], input[aria-label*="characters you see" i]');
+  const image = document.querySelector('#captchaimg, img[alt*="CAPTCHA" i]');
+  const visible = (el) => !!el && (el.offsetWidth > 0 || el.offsetHeight > 0);
+  return visible(input) && visible(image);
+}
+
 function detectPage() {
   const host = location.hostname;
   const path = location.pathname;
   const href = location.href;
 
   if (IS_ANTIGRAVITY && (path.includes("oauth-callback") || document.querySelector("[data-code-box]"))) return "authcode";
-  if (isOauthUrl()) return "oauth";
+  if (host === "accounts.google.com" && hasCaptchaInput()) return "captcha";
+  // OAuth URL must not shadow Google's login screens. The OAuth auth link
+  // redirects to accounts.google.com/signin/... but the page still has the
+  // email/OTP inputs, so check those first.
+  if (host === "accounts.google.com" &&
+      document.querySelector('#identifierId, input[name="identifier"], input[autocomplete="username"], input[type="email"], input[name="login_hint"]')) {
+    return "google-signin";
+  }
   if ((host === "accounts.google.com" || host === "accounts.cloud.google.com") &&
       hasOtpInput() && /verify-oob-code|accountverification|challenge|ootp/i.test(path + href)) return "login-otp";
+  if (isOauthUrl()) return "oauth";
   if (host === "accounts.cloud.google.com" &&
       (path.includes("/signup/email") || path.includes("/login/email"))) return "email";
   if (host === "accounts.google.com") return "google-signin";
@@ -1079,9 +1094,31 @@ async function renderPanel() {
 
 // ==================== ROUTER / INIT ====================
 
+let captchaWaitFor = "";
+
+async function handleCaptcha(state) {
+  const intern = currentIntern(state);
+  const email = intern ? intern.email : "";
+  if (captchaWaitFor !== email) {
+    captchaWaitFor = email;
+    setStatus("CAPTCHA — solve manually for " + email + ". Waiting...");
+  }
+  // Keep the login session alive while the user solves the CAPTCHA.
+  await safeSet({
+    captchaWaiting: true,
+    captchaEmail: email,
+    lastActivityAt: Date.now(),
+    accountTimeoutAt: Date.now() + 30 * 60 * 1000
+  });
+}
+
 async function runForCurrentPage(manual) {
   const page = detectPage();
   const state = await getState();
+  if (page !== "captcha" && state.captchaWaiting) {
+    await safeSet({ captchaWaiting: false, captchaEmail: "" });
+    captchaWaitFor = "";
+  }
 
   if (state.proxyHold) {
     setStatus("Proxy changed - waiting for a healthy IP...");
@@ -1098,6 +1135,7 @@ async function runForCurrentPage(manual) {
     return;
   }
 
+  if (page === "captcha") return handleCaptcha(state);
   if (page === "oauth") return handleOauthPage(state);
   if (page === "authcode") return handleAuthCodePage(state);
   if (!state.config.autoRun && !manual) return;
@@ -1254,6 +1292,28 @@ try {
 document.addEventListener("click", () => sendActivity("click"), true);
 document.addEventListener("input", () => sendActivity("input"), true);
 document.addEventListener("change", () => sendActivity("change"), true);
+
+// Refresh a genuinely stuck flow page after 3 minutes. Never reload while a
+// CAPTCHA is waiting for manual input.
+let stuckUrl = location.href;
+let stuckSince = Date.now();
+timers.push(setInterval(() => {
+  const now = Date.now();
+  if (location.href !== stuckUrl) {
+    stuckUrl = location.href;
+    stuckSince = now;
+    return;
+  }
+  if (detectPage() === "captcha") {
+    stuckSince = now;
+    return;
+  }
+  if (now - stuckSince >= 3 * 60 * 1000) {
+    stuckSince = now;
+    setStatus("Stuck on this page for 3 min — refreshing...");
+    try { location.reload(); } catch (e) {}
+  }
+}, 15000));
 
 (async () => {
   await randDelay(500, 800);

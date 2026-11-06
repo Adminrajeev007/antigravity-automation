@@ -39,6 +39,11 @@ fi
 
 echo "USB interface: $IFACE"
 printf '%s\n' "$IFACE" > /tmp/usb-octo-iface
+SRC_IP="${SOCKS_SRC:-}"
+if [ -z "$SRC_IP" ]; then
+  SRC_IP="$(curl -s -m 3 http://127.0.0.1:9400/api/status | sed -n 's/.*"clientIP":"\([^"]*\)".*/\1/p')"
+fi
+echo "USB source: ${SRC_IP:-none}"
 DEFIF="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
 echo "Host default interface: ${DEFIF:-none}"
 
@@ -73,6 +78,7 @@ import os, socket, struct, threading, select
 PORT = int(os.environ.get('SOCKS_PORT', '1080'))
 IFACE_ENV = os.environ.get('SOCKS_IF', '')
 IFACE_FILE = '/tmp/usb-octo-iface'
+SRC_IP = os.environ.get('SOCKS_SRC', '')
 BUFSIZE = 65536
 IP_BOUND_IF = getattr(socket, 'IP_BOUND_IF', 25)
 
@@ -179,6 +185,8 @@ def handle(conn):
 
         out = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         out.setsockopt(socket.IPPROTO_IP, IP_BOUND_IF, ifindex())
+        if SRC_IP:
+            out.bind((SRC_IP, 0))
         out.settimeout(20)
         try:
             out.connect(dst)
@@ -213,7 +221,7 @@ if __name__ == '__main__':
     main()
 PY
 
-SOCKS_PORT="$PORT" SOCKS_IF="$IFACE" nohup "$PYTHON_BIN" /tmp/usb-octo-socks.py >/tmp/usb-octo-socks.log 2>&1 &
+SOCKS_PORT="$PORT" SOCKS_IF="$IFACE" SOCKS_SRC="$SRC_IP" nohup "$PYTHON_BIN" /tmp/usb-octo-socks.py >/tmp/usb-octo-socks.log 2>&1 < /dev/null &
 PID=$!
 echo "$PID" > /tmp/usb-octo-socks.pid
 sleep 2
@@ -237,7 +245,7 @@ while :; do
   sleep 2
 done
 ROUTE
-nohup sh /tmp/usb-octo-route.sh >/tmp/usb-octo-route.log 2>&1 &
+nohup sh /tmp/usb-octo-route.sh >/tmp/usb-octo-route.log 2>&1 < /dev/null &
 
 networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | while IFS= read -r S; do
   [ -n "$S" ] || continue

@@ -275,9 +275,10 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (!merged.sheetWebhookUrl) merged.sheetWebhookUrl = DEFAULTS.sheetWebhookUrl;
   if (!merged.sheetToken) merged.sheetToken = DEFAULTS.sheetToken;
 
-  // One-time migration: use the SOCKS5 custom proxy and keep it on.
+  // Login extension is direct by default; keep the URL for later but do not
+  // enable the proxy automatically. The SOCKS proxy is not used for login.
   if (!stored.socks5ProxyMigrated) {
-    merged.proxy.enabled = true;
+    merged.proxy.enabled = false;
     merged.proxy.customUrl = DEFAULTS.proxy.customUrl;
     merged.proxy.socks5ProxyMigrated = true;
   }
@@ -471,7 +472,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 function stuckTimeoutMs(config) {
   const minutes = Number(config && config.stuckMinutes);
-  return Math.max(0.5, Math.min(60, minutes || 2.5)) * 60000;
+  return Math.max(3, Math.min(60, minutes || 3)) * 60000;
 }
 
 async function noteActivity(reason) {
@@ -747,6 +748,15 @@ async function ensureFlowAlive() {
   const config = stored.config || {};
   if (config.live === false) return;
   if (stored.proxyRecovering && !stored.proxyHold) return;
+  if (stored.captchaWaiting) {
+    await chrome.storage.local.set({
+      lastActivityAt: Date.now(),
+      accountTimeoutAt: Date.now() + 30 * 60 * 1000
+    });
+    await scheduleAccountTimeout(Date.now() + 30 * 60 * 1000);
+    return { action: "wait", reason: "captcha", email: stored.captchaEmail || "" };
+  }
+
   if (stored.proxyHold) {
     const holdAt = Number(stored.proxyRecoveryStartedAt) || 0;
     if (holdAt && Date.now() - holdAt < 30000) return;
@@ -915,7 +925,7 @@ async function doDoctorCheck() {
     "config", "proxyHold", "proxyRecovering", "proxyRecoveryStartedAt",
     "accountStartedAt", "lastActivityAt",
     "oauthStartPending", "oauthStartPendingAt", "oauthApiResult", "oauthPendingAt",
-    "doctorState", "billingReached", "interns", "currentIndex"
+    "doctorState", "billingReached", "captchaWaiting", "captchaEmail", "interns", "currentIndex"
   ]);
   const config = stored.config || {};
   if (config.live === false) {
@@ -1039,7 +1049,7 @@ async function doPrepareLiveAccount(preferredTabId) {
     }
   });
   if (ignoredChanged) await chrome.storage.local.set({ interns });
-  const idx = interns.findIndex((i) => i.status === "pending" || i.status === "in_progress");
+  const idx = interns.findIndex((i) => i.status === "pending");
   if (idx < 0) {
     return { ok: false, error: "Add login emails or reset the list to start again." };
   }
@@ -1084,9 +1094,20 @@ async function doPrepareLiveAccount(preferredTabId) {
   try { await clearGcpCookies(); } catch (e) {}
   try { await applyProxy(); } catch (e) {}
 
-  await openLoginTab(preferredTabId);
+  // New flow: request the OAuth URL first, then let Google's login screens
+  // authenticate the email/OTP inside that OAuth flow. When login completes,
+  // the same flow proceeds to consent and the final API code submission.
+  let oauthStarted = false;
+  try {
+    const oauth = await startOauth(email, preferredTabId);
+    oauthStarted = !!(oauth && oauth.ok);
+    if (!oauthStarted) console.warn('OAuth-first start failed:', oauth && oauth.error);
+  } catch (e) {
+    console.warn('OAuth-first start error:', String((e && e.message) || e));
+  }
+  if (!oauthStarted) await openLoginTab(preferredTabId);
   await scheduleAccountTimeout(accountStartedAt + stuckTimeoutMs(config));
-  return { ok: true, email };
+  return { ok: true, email, oauthFirst: oauthStarted };
 }
 
 async function openLoginTab(preferredTabId) {
@@ -1660,13 +1681,42 @@ async function syncSheetEmailsUnlocked() {
     }
 
     const now = Date.now();
+
+    // Keep the local list in sync with the Sheet. A previously-pending email
+    // that is now completed/rejected must never be picked again.
+    const localInterns = Array.isArray(stored.interns) ? stored.interns : [];
+    let statusChanged = false;
+    for (const item of localInterns) {
+      const key = String(item.email || '').trim().toLowerCase();
+      const match = byEmail.get(key);
+      if (!match) continue;
+      const row = match.row || {};
+      const rowStatus = String(row.status || '').toLowerCase();
+      if (row.successful || rowStatus === 'completed' || rowStatus === 'successful') {
+        if (item.status !== 'done') {
+          item.status = 'done';
+          item.note = 'Sheet completed';
+          statusChanged = true;
+        }
+      } else if (row.rejected || rowStatus === 'rejected') {
+        if (item.status !== 'failed') {
+          item.status = 'failed';
+          item.note = 'Sheet rejected';
+          statusChanged = true;
+        }
+      }
+    }
+    if (statusChanged) await chrome.storage.local.set({ interns: localInterns });
+
     const candidates = [...byEmail.values()].filter(({ row }) => {
       const status = String(row.status || "").toLowerCase();
       const notes = String(row.notes || "").toLowerCase();
-      if (row.successful || row.rejected) return false;
-      if (["successful", "completed", "rejected", "reserved"].includes(status)) return false;
-      if (notes.includes("picked")) return false;
-      return status === "" || status === "pending";
+      // Only completed/successful rows are excluded. Pending, picked,
+      // rejected, reserved and failed rows are all eligible for a retry.
+      if (row.successful) return false;
+      if (status === "successful" || status === "completed") return false;
+      if (notes.includes("completed")) return false;
+      return true;
     });
 
     let added = 0;
@@ -2177,7 +2227,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         interns[idx] = { ...interns[idx], status: "failed", note: msg.reason || "failed" };
         await markSheetRejected(msg.email, msg.reason || "login failed");
       }
-      const nextIdx = interns.findIndex((i) => i.status === "pending" || i.status === "in_progress");
+      const nextIdx = interns.findIndex((i) => i.status === "pending");
       await chrome.storage.local.set({
         interns,
         currentIndex: nextIdx >= 0 ? nextIdx : interns.length

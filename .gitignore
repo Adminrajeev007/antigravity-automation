@@ -21,3 +21,15 @@ antig-orchestrator-mac/gcp-ag-login-v2.9.*.zip
 
 /gcp-auto-intern-portal/
 /gcp-prepayment/
+# Keep only current extension builds
+gcp-antigravity-login-v2.9.*.zip
+!gcp-antigravity-login-v2.9.23.zip
+antig-orchestrator-mac/gcp-antigravity-login-v2.9.*.zip
+!antig-orchestrator-mac/gcp-antigravity-login-v2.9.23.zip
+gcp-auto-intern-portal-v1.5.*.zip
+!gcp-auto-intern-portal-v1.5.0.zip
+!gcp-auto-intern-portal-v1.5.4.zip
+antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.*.zip
+!antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.0.zip
+!antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.4.zip
+

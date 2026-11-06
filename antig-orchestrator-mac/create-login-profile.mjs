@@ -13,7 +13,7 @@ import path from 'node:path'
 
 const SHEET = 'https://script.google.com/macros/s/AKfycbzoCHT0aGmxBzTD_j9gEU1JFxBW52_NUj7x-NHW_D_W_PmIZ4YIWWCOWtIcR2fojkfs/exec'
 const SHEET_TOKEN = 'change-this-sheet-token'
-const ZIP = process.env.LOGIN_ZIP || path.join(process.cwd(), 'gcp-ag-login-v2.9.15.zip')
+const ZIP = process.env.LOGIN_ZIP || path.join(process.cwd(), 'gcp-antigravity-login-v2.9.23.zip')
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -102,14 +102,59 @@ async function main() {
   const item = Array.isArray(up.data) ? up.data[0] : up.data
   console.log(`extension ready: ${item.name} ${item.version} (${item.id})`)
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const name = `GCP Antigravity Login ${stamp}`
-  const created = await api(port, 'POST', '/api/v2/profiles/quick', { alias: name, os: 'mac', os_arch: 'x86' })
-  const payload = created && created.data ? created.data : created
-  const uuid = payload.uuid || (payload.profile && payload.profile.uuid)
-  if (!uuid) throw new Error('Octo did not return a profile uuid')
+  const isLogin = (title) => /^GCP Antigravity Login/i.test(String(title || ''))
+  const activeNow = async () => {
+    const rows = await api(port, 'GET', '/api/profiles/active')
+    return Array.isArray(rows) ? rows : ((rows && rows.data) || [])
+  }
+  const freeOldProfile = async () => {
+    const list = await api(port, 'POST', '/api/v2/profiles/list', { start: 0, length: 100 })
+    const profiles = (list.data && list.data.profiles) || list.profiles || []
+    const active = await activeNow()
+    const activeSet = new Set(active.map((p) => p.uuid))
+    const candidates = profiles
+      .filter((p) => p.uuid && !isLogin(p.title || p.name))
+      .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+    const pick = candidates.find((p) => !activeSet.has(p.uuid)) || candidates[0]
+    if (!pick) return false
+    console.log(`profile limit: deleting old non-login profile ${pick.uuid} (${pick.title || pick.name || ''})`)
+    try { await api(port, 'POST', '/api/profiles/force_stop', { uuid: pick.uuid }) } catch (e) {}
+    await sleep(1000)
+    try { await api(port, 'POST', '/api/v2/profiles/delete', { uuids: [pick.uuid] }) } catch (e) { return false }
+    return true
+  }
 
-  const detail = (await api(port, 'GET', `/api/v2/profiles/${encodeURIComponent(uuid)}`)).data
+  let uuid = ''
+  let name = ''
+  let detail = null
+  const all = await api(port, 'POST', '/api/v2/profiles/list', { start: 0, length: 100 })
+  const existingProfiles = (all.data && all.data.profiles) || all.profiles || []
+  const existingLogin = existingProfiles.find((p) => p.uuid && isLogin(p.title || p.name))
+  if (existingLogin) {
+    uuid = existingLogin.uuid
+    name = existingLogin.title || existingLogin.name || `GCP Antigravity Login ${Date.now()}`
+    console.log(`reusing existing login profile: ${uuid}`)
+    detail = (await api(port, 'GET', `/api/v2/profiles/${encodeURIComponent(uuid)}`)).data
+  } else {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    name = `GCP Antigravity Login ${stamp}`
+    let created = null
+    for (let attempt = 1; attempt <= 3 && !created; attempt += 1) {
+      try {
+        created = await api(port, 'POST', '/api/v2/profiles/quick', { alias: name, os: 'mac', os_arch: 'x86' })
+      } catch (e) {
+        const msg = String(e.message || e)
+        if (!/maximum|limit|saved_error|429|too many/i.test(msg)) throw e
+        console.log(`login profile create failed (${msg}); freeing a profile and retrying...`)
+        if (!(await freeOldProfile())) break
+      }
+    }
+    if (!created) throw new Error('could not create a login profile after freeing old profiles')
+    const payload = created && created.data ? created.data : created
+    uuid = payload.uuid || (payload.profile && payload.profile.uuid)
+    if (!uuid) throw new Error('Octo did not return a profile uuid')
+    detail = (await api(port, 'GET', `/api/v2/profiles/${encodeURIComponent(uuid)}`)).data
+  }
   const body = {
     name,
     description: detail.description ?? '',
@@ -127,6 +172,11 @@ async function main() {
     extensions: [item.id]
   }
   await api(port, 'PATCH', `/api/v2/profiles/${encodeURIComponent(uuid)}`, body)
+  const already = (await activeNow()).some((p) => p.uuid === uuid)
+  if (already) {
+    try { await api(port, 'POST', '/api/profiles/stop', { uuid }) } catch (e) {}
+    await sleep(1200)
+  }
   await api(port, 'POST', '/api/profiles/start', { uuid, debug_port: true })
 
   let entry = null

@@ -34,14 +34,45 @@ const require = createRequire(import.meta.url)
 globalThis.self = globalThis
 require('./gcp-auto-intern-portal/email-gen.js')
 
+const EMAIL_HISTORY_FILE = process.env.EMAIL_HISTORY_FILE || path.join(os.homedir(), 'Desktop', 'antig-logs', 'email-history.txt')
+const usedEmails = new Set()
+const usedLocals = new Set()
+try {
+  fs.mkdirSync(path.dirname(EMAIL_HISTORY_FILE), { recursive: true })
+  for (const line of fs.readFileSync(EMAIL_HISTORY_FILE, 'utf8').split('\n')) {
+    const value = String(line || '').trim().toLowerCase()
+    if (!value.includes('@')) continue
+    usedEmails.add(value)
+    usedLocals.add(value.split('@')[0])
+  }
+} catch {}
+
 function generateBatchEmails(count) {
-  const used = new Set()
   const out = []
+  const forcedDomain = String(process.env.ORCH_EMAIL_DOMAIN || '').trim().replace(/^@/, '')
   for (let i = 0; i < count; i += 1) {
-    const email = globalThis.gcpRandomEmail(used)
+    let email = globalThis.gcpRandomEmail(usedEmails)
     if (!email) break
+    let local = String(email).split('@')[0].toLowerCase()
+    let domain = forcedDomain || String(email).split('@')[1]
+    if (usedLocals.has(local)) {
+      const base = local
+      for (let n = 0; n < 1000; n += 1) {
+        local = base + Math.floor(1000 + Math.random() * 9000)
+        if (!usedLocals.has(local)) break
+      }
+    }
+    email = `${local}@${domain}`
+    if (usedEmails.has(email.toLowerCase())) {
+      for (let n = 0; n < 1000; n += 1) {
+        const candidate = `${local}${Math.floor(100 + Math.random() * 9000)}@${domain}`
+        if (!usedEmails.has(candidate)) { email = candidate; local = candidate.split('@')[0]; break }
+      }
+    }
+    usedEmails.add(email.toLowerCase())
+    usedLocals.add(local)
+    try { fs.appendFileSync(EMAIL_HISTORY_FILE, email + '\n') } catch {}
     out.push(email)
-    used.add(String(email).toLowerCase())
   }
   return out
 }
@@ -55,6 +86,8 @@ const AIRPLANE_SECONDS = Number(process.env.ORCH_AIRPLANE_SECONDS || 6)
 const PROXY_SERVER = process.env.ORCH_PROXY_SERVER || ''
 const PROXY_PORT = process.env.ORCH_PROXY_PORT || (String(PROXY_SERVER).match(/:(\d+)/) || [])[1] || '1080'
 const ROTATE_USB = process.env.ORCH_ROTATE_USB === '1'
+const SHEET_WEBAPP_URL = process.env.SHEET_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzoCHT0aGmxBzTD_j9gEU1JFxBW52_NUj7x-NHW_D_W_PmIZ4YIWWCOWtIcR2fojkfs/exec'
+const SHEET_TOKEN = process.env.SHEET_TOKEN || 'change-this-sheet-token'
 const MAX_RUNS = Number(process.env.ORCH_MAX_RUNS || 0)
 const BATCH_SIZE = Math.max(1, Number(process.env.ORCH_BATCH || 2))
 const EXT_BASE_ENV = process.env.ORCH_EXT_ID || ''
@@ -242,11 +275,23 @@ async function restartOctoApp() {
 async function deleteAllProfilesPass() {
   const uuids = new Set()
   let blocked = false
+  const isLoginProfile = (name) => /^GCP Antigravity Login/i.test(String(name || ''))
   try {
     const active = await octo('GET', '/api/profiles/active')
     const rows = Array.isArray(active) ? active : (active && active.data) || []
     for (const p of rows) {
       if (!p.uuid) continue
+      let title = p.title || p.name || ''
+      if (!title) {
+        try {
+          const d = await octo('GET', `/api/v2/profiles/${encodeURIComponent(p.uuid)}`)
+          title = (d && d.data && d.data.title) || ''
+        } catch {}
+      }
+      if (isLoginProfile(title)) {
+        log(`profile reset: keeping login profile ${p.uuid}`)
+        continue
+      }
       uuids.add(p.uuid)
       try { await octo('POST', '/api/profiles/stop', { uuid: p.uuid }) } catch {}
     }
@@ -257,7 +302,11 @@ async function deleteAllProfilesPass() {
   try {
     const list = await octo('POST', '/api/v2/profiles/list', { start: 0, length: 100 })
     const profiles = (list.data && list.data.profiles) || list.profiles || []
-    for (const p of profiles) if (p.uuid) uuids.add(p.uuid)
+    for (const p of profiles) {
+      if (!p.uuid) continue
+      if (isLoginProfile(p.title || p.name)) continue
+      uuids.add(p.uuid)
+    }
   } catch (e) {
     log('profile reset: list failed:', e.message)
   }
@@ -292,6 +341,29 @@ async function deleteAllProfiles() {
   return total
 }
 
+async function freeProfileSlot() {
+  const isLogin = (name) => /^GCP Antigravity Login/i.test(String(name || ''))
+  const list = await octo('POST', '/api/v2/profiles/list', { start: 0, length: 100 })
+  const profiles = (list.data && list.data.profiles) || list.profiles || []
+  const active = await octo('GET', '/api/profiles/active')
+  const rows = Array.isArray(active) ? active : (active && active.data) || []
+  const activeSet = new Set(rows.map((p) => p.uuid))
+  const candidates = profiles
+    .filter((p) => p.uuid && !isLogin(p.title || p.name))
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+  const pick = candidates.find((p) => !activeSet.has(p.uuid)) || candidates[0]
+  if (!pick) return false
+  log(`profile limit: deleting non-login profile ${pick.uuid} (${pick.title || pick.name || ''})`)
+  try { await octo('POST', '/api/profiles/force_stop', { uuid: pick.uuid }) } catch {}
+  try {
+    await deleteProfile(pick.uuid, null, 0)
+    return true
+  } catch (e) {
+    log(`profile limit: could not delete ${pick.uuid}: ${e.message}`)
+    return false
+  }
+}
+
 async function createProfile(name, extId) {
   const quick = { alias: name, os: 'mac', os_arch: 'x86' }
   let created
@@ -299,11 +371,18 @@ async function createProfile(name, extId) {
     created = await octo('POST', '/api/v2/profiles/quick', quick)
   } catch (e) {
     if (!isProfileCreationError(e)) throw e
-    log(`profile creation failed (${e.message}); deleting all profiles and restarting batch`)
-    await deleteAllProfiles()
-    const reset = new Error(`all profiles deleted after profile creation error: ${e.message}`)
-    reset.restartBatch = true
-    throw reset
+    let last = e
+    for (let attempt = 1; attempt <= 3 && !created; attempt += 1) {
+      const freed = await freeProfileSlot()
+      if (!freed) break
+      await sleep(2500)
+      try {
+        created = await octo('POST', '/api/v2/profiles/quick', quick)
+      } catch (e2) {
+        last = e2
+      }
+    }
+    if (!created) throw last
   }
   const payload = created && created.data ? created.data : created
   const uuid = payload.uuid || (payload.profile && payload.profile.uuid)
@@ -571,6 +650,94 @@ async function deleteSession(sess, reason, delayMs) {
   return sess.deleting
 }
 
+const SHEET_QUEUE_FILE = process.env.SHEET_QUEUE_FILE || path.join(os.homedir(), 'Desktop', 'antig-logs', 'sheet-queue.jsonl')
+let sheetFlushBusy = false
+const billingSheetBusy = new Set()
+const billingSheetQueued = new Set()
+
+async function postBillingEmail(email) {
+  const url = new URL(SHEET_WEBAPP_URL)
+  url.searchParams.set('token', SHEET_TOKEN)
+  url.searchParams.set('action', 'qr')
+  url.searchParams.set('tab', 'QR')
+  url.searchParams.set('email', email)
+  url.searchParams.set('notes', 'billing reached')
+  const res = await fetch(url, { signal: AbortSignal.timeout(30000) })
+  const text = (await res.text()).replace(/\s+/g, ' ').trim()
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`)
+  return text
+}
+
+function queueBillingEmail(email) {
+  if (billingSheetQueued.has(email)) return
+  try {
+    fs.mkdirSync(path.dirname(SHEET_QUEUE_FILE), { recursive: true })
+    let existing = []
+    try { existing = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').split('\n').filter(Boolean) } catch {}
+    const found = existing.some((line) => {
+      try { return JSON.parse(line).email === email } catch { return false }
+    })
+    if (!found) fs.appendFileSync(SHEET_QUEUE_FILE, JSON.stringify({ email, at: Date.now() }) + '\n')
+    billingSheetQueued.add(email)
+    log(`billing sheet queued for retry: ${email}`)
+  } catch (e) {
+    log(`billing sheet queue write failed for ${email}: ${e.message}`)
+  }
+}
+
+async function flushSheetQueue() {
+  if (sheetFlushBusy || !fs.existsSync(SHEET_QUEUE_FILE)) return
+  sheetFlushBusy = true
+  try {
+    let lines = []
+    try { lines = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').split('\n').filter(Boolean) } catch { return }
+    const byEmail = new Map()
+    for (const line of lines) {
+      try {
+        const email = JSON.parse(line).email
+        if (email) byEmail.set(email, line)
+      } catch {}
+    }
+    const pending = []
+    let saved = 0
+    for (const [email, line] of byEmail) {
+      try {
+        await postBillingEmail(email)
+        billingSheetQueued.delete(email)
+        saved += 1
+        log(`billing sheet retry ok ${email}`)
+      } catch (e) {
+        pending.push(line)
+      }
+    }
+    try { fs.writeFileSync(SHEET_QUEUE_FILE, pending.length ? pending.join('\n') + '\n' : '') } catch {}
+    if (saved) log(`billing sheet queue flushed ${saved}`)
+  } finally {
+    sheetFlushBusy = false
+  }
+}
+
+async function saveBillingToSheet(email) {
+  if (!email || billingSheetBusy.has(email) || billingSheetQueued.has(email)) return
+  billingSheetBusy.add(email)
+  try {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const text = await postBillingEmail(email)
+        billingSheetQueued.delete(email)
+        log(`billing sheet ${email}: ${text.slice(0, 200)}`)
+        return
+      } catch (e) {
+        log(`billing sheet failed for ${email} (attempt ${attempt}/3): ${e.message}`)
+        if (attempt < 3) await sleep(3000 * attempt)
+      }
+    }
+    queueBillingEmail(email)
+  } finally {
+    billingSheetBusy.delete(email)
+  }
+}
+
 async function checkSignupError(sess) {
   try {
     const active = await octo('GET', '/api/profiles/active')
@@ -591,6 +758,18 @@ async function checkSignupError(sess) {
 
   try {
     const list = await fetch(`http://127.0.0.1:${sess.debugPort}/json/list`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())
+    const billing = (list || []).some((t) => {
+      const u = String(t.url || '').toLowerCase()
+      return u.includes('/freetrial/signup/billing/') || (u.includes('console.cloud.google.com/freetrial') && u.includes('billing'))
+    })
+    if (billing) {
+      if (sess.billingHandling) return
+      sess.billingHandling = true
+      log(`billing page detected for ${sess.email}; saving to sheet and closing profile`)
+      await saveBillingToSheet(sess.email)
+      await deleteSession(sess, 'billing', 0)
+      return
+    }
     const bad = (list || []).some((t) => {
       const u = String(t.url || '').toLowerCase()
       const title = String(t.title || '').toLowerCase()
@@ -690,6 +869,16 @@ function proxyEgress(timeoutMs = 12000) {
   }
 }
 
+function fixUsbTether(attempt = 1) {
+  try {
+    const script = process.env.ANTIG_FIX_USB || path.join(process.cwd(), 'fix-usb-tether.sh')
+    execFileSync(script, [String(attempt)], { timeout: 60000, stdio: 'ignore' })
+    log('USB tether repair completed')
+  } catch (e) {
+    log(`USB tether repair failed: ${e.message}`)
+  }
+}
+
 async function rotateProxyIp(beforeIp) {
   const before = beforeIp || (await proxyEgress()) || 'unknown'
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -698,8 +887,13 @@ async function rotateProxyIp(beforeIp) {
       await android.reset({ duration: AIRPLANE_SECONDS })
     } catch (e) {
       log(`USB cycle error: ${e.message}`)
+      fixUsbTether(attempt)
     }
     await android.tetherAction({ action: 'on' }).catch(() => {})
+    if (!(await proxyEgress())) {
+      fixUsbTether(attempt)
+      await sleep(3000)
+    }
 
     let last = null
     for (let wait = 0; wait < 20; wait += 1) {
@@ -789,6 +983,23 @@ const server = http.createServer(async (req, res) => {
     })
     return
   }
+  if (req.method === 'POST' && req.url.startsWith('/billing')) {
+    const body = await readBody(req)
+    const email = String(body.email || '').toLowerCase()
+    const uuid = String(body.uuid || '')
+    let sess = uuid ? sessions.get(uuid) : null
+    if (!sess && email) {
+      sess = [...sessions.values()].find((s) => String(s.email || '').toLowerCase() === email) || null
+    }
+    if (sess) {
+      finishSession(sess, 'billing')
+      log(`billing reached for ${sess.email}`)
+    } else {
+      log(`billing reached for ${email || uuid || 'unknown'}`)
+    }
+    send(res, 200, { ok: true })
+    return
+  }
   if (req.method === 'POST' && req.url.startsWith('/delete')) {
     const body = await readBody(req)
     const extId = String(body.extId || (EXT && EXT.extBase) || '')
@@ -832,6 +1043,8 @@ async function main() {
   log(`octo api port ${octoPort()}`)
 
   await uploadExtension()
+  flushSheetQueue().catch(() => {})
+  try { setInterval(() => flushSheetQueue().catch(() => {}), 60000).unref() } catch {}
   if (process.env.ORCH_RESET_PROFILES === '1') {
     try {
       await deleteAllProfiles()

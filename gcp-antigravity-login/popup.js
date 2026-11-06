@@ -344,7 +344,7 @@ async function mergeLoginEmails(emails) {
   let currentIndex = state.currentIndex;
   const current = merged[currentIndex];
   if (!current || current.status === "done" || current.status === "failed") {
-    const next = merged.findIndex((i) => i.status === "pending" || i.status === "in_progress");
+    const next = merged.findIndex((i) => i.status === "pending");
     if (next >= 0) currentIndex = next;
   }
 
@@ -479,9 +479,9 @@ $("oauthBtn").onclick = () => chrome.runtime.sendMessage({ type: "OPEN_OAUTH" })
 $("skipCurrentBtn").onclick = async () => {
   const state = await getState();
   const current = state.interns[state.currentIndex];
-  const intern = current && (current.status === "pending" || current.status === "in_progress")
+  const intern = current && current.status === "pending"
     ? current
-    : state.interns.find((item) => item.status === "pending" || item.status === "in_progress");
+    : state.interns.find((item) => item.status === "pending");
   if (!intern) return;
   await chrome.storage.local.set({ currentIndex: state.interns.findIndex((item) => item.email === intern.email) });
   chrome.runtime.sendMessage({

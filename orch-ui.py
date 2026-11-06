@@ -135,6 +135,21 @@ while True:
         summary(batch, started, failed, results, last_before, last_after, last_ts)
         continue
 
+
+    m = re.search(r'USB IP cycle (\d+)/3', raw)
+    if m:
+        print(f'{paint("2", ts)} {paint("33", "ROTATE".ljust(7))} phone IP cycle {m.group(1)}/3', flush=True)
+        continue
+
+    m = re.search(r'USB IP unchanged \(([^)]*)\), retrying', raw)
+    if m:
+        print(f'{paint("2", ts)} {paint("33", "ROTATE".ljust(7))} IP unchanged ({m.group(1)}), retrying', flush=True)
+        continue
+
+    m = re.search(r'all profiles deleted', raw)
+    if m:
+        print(f'{paint("2", ts)} {paint("36", "RESET".ljust(7))} all profiles cleared', flush=True)
+        continue
     m = re.search(r'extension ([\w.]+) ready', raw)
     if m:
         print(f'{paint("2", ts)} {paint("32", "READY".ljust(7))} extension {m.group(1)}', flush=True)
