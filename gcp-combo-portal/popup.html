@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GCP Intern Portal Sender</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>GCP Portal Sender</h1>
+
+    <section>
+      <h2>Auto email</h2>
+      <p class="hint">
+        Picks a random domain from your list and builds a Hindu / Muslim / Sikh /
+        Christian name + birth-year email that has never been used here.
+      </p>
+      <div class="row">
+        <button id="genStartBtn" class="primary">Generate &amp; Start</button>
+        <button id="genOnlyBtn">Generate only</button>
+      </div>
+      <label class="checkline">
+        <input id="autoEmail" type="checkbox" checked /> Auto-generate next after success/failure
+      </label>
+      <label class="checkline">
+        <input id="autoAssign" type="checkbox" checked /> Auto-assign email when profile opens
+      </label>
+      <div id="genInfo" class="stats">No email generated yet.</div>
+    </section>
+
+    <section>
+      <div class="row">
+        <div>
+          <label for="domain">Company domain</label>
+          <input id="domain" type="text" placeholder="fussion.studio" />
+        </div>
+      </div>
+
+      <label for="names">Interns (one per line)</label>
+      <p class="hint">
+        Paste names or emails. A line without "@" becomes
+        <code>name@domain</code> (lowercased, spaces removed).
+      </p>
+      <textarea id="names" rows="8" placeholder="Raghav Chaddu&#10;priya sharma&#10;aman@fussion.studio"></textarea>
+      <div class="row">
+        <button id="loadBtn" class="primary">Save list</button>
+        <button id="appendBtn">Append</button>
+        <button id="clearBtn" class="danger">Clear all</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Progress</h2>
+      <div id="stats" class="stats">No interns yet.</div>
+      <div class="row">
+        <button id="resetBtn">Reset progress</button>
+        <button id="signupBtn" class="primary">Start next signup</button>
+        <button id="signoutBtn">Sign out</button>
+      </div>
+      <ul id="list" class="list"></ul>
+    </section>
+
+    <section>
+      <h2>Fleet (dashboard remote control)</h2>
+      <p class="hint">
+        Connect this browser to your fleet dashboard. Heartbeat goes out over
+        WebSocket (REST fallback); dashboard assigns emails and receives QR +
+        fail/success status. Device ID is auto-generated.
+      </p>
+      <label class="checkline">
+        <input id="fleetOn" type="checkbox" /> Enable fleet mode
+      </label>
+      <label for="fleetUrl">Dashboard URL</label>
+      <input id="fleetUrl" type="text" placeholder="http://127.0.0.1:3101" />
+      <label for="fleetToken">API token</label>
+      <input id="fleetToken" type="text" placeholder="EXT_API_TOKEN from server logs / data/.api-token" />
+      <label for="portalToken">User portal token (route my QRs to this user)</label>
+      <input id="portalToken" type="text" placeholder="portal token from dashboard Users tab (optional)" />
+      <p class="hint">
+        With a portal token set, every QR + billing result from this browser is
+        pushed straight into that user's portal — they never type an email.
+      </p>
+      <label for="profileName">Octo profile name (optional)</label>
+      <input id="profileName" type="text" placeholder="auto-detected / set manually" spellCheck="false" />
+      <p class="hint">
+        Lets the dashboard show and close this browser's Octo profile. Detected
+        on startup; use Detect if the name is missing.
+      </p>
+      <div class="row">
+        <button id="fleetSaveBtn" class="primary">Save fleet</button>
+        <button id="fleetTestBtn">Test</button>
+        <button id="fleetDetectBtn">Detect profile</button>
+      </div>
+      <div id="fleetInfo" class="stats">Fleet off.</div>
+    </section>
+
+    <section>
+      <h2>Google Sheet (QR log)</h2>
+      <p class="hint">
+        Adds an email to the sheet only when its QR is generated. Emails are
+        deduplicated server-side; status is updated later by your consumer.
+      </p>
+      <label class="checkline">
+        <input id="sheetOn" type="checkbox" /> Enable sheet sync
+      </label>
+      <label for="sheetUrl">Web app URL</label>
+      <input id="sheetUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" spellCheck="false" />
+      <label for="sheetToken">Sheet token</label>
+      <input id="sheetToken" type="text" placeholder="SCRIPT_TOKEN from Code.gs" spellCheck="false" />
+      <label class="checkline">
+        <input id="deleteAfterQr" type="checkbox" checked /> Close &amp; delete profile after QR is saved
+      </label>
+      <div class="row">
+        <button id="sheetSaveBtn" class="primary">Save sheet</button>
+        <button id="sheetTestBtn">Test</button>
+      </div>
+      <div id="sheetInfo" class="stats">Sheet off.</div>
+    </section>
+
+    <section>
+      <h2>Settings</h2>
+      <p class="hint">
+        Random Indian addresses are generated automatically, with the pincode
+        always matching the state. OTP and payment (UPI/card) are always manual.
+      </p>
+      <label class="checkline">
+        <input id="autoRun" type="checkbox" checked /> Auto-fill pages (human speed)
+      </label>
+      <div class="row">
+        <button id="saveCfgBtn" class="primary">Save settings</button>
+        <button id="exportBtn">Export CSV</button>
+      </div>
+    </section>
+
+    <p class="foot">
+      V1 basic. Typing 50-180ms/key. Last step (Start free / QR) is where you
+      will iterate next.
+    </p>
+
+    <script src="email-gen.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

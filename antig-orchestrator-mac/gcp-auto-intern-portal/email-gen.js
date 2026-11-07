@@ -74,21 +74,29 @@
   {f:["rafiq","karim","jamal","nasir","shafiq","rahim","nusrat","shirin","taslima","rumana"],l:["rahman","ahmed","hossain","islam","uddin","chowdhury","khan","mia","sarker","bhuiyan"]},
   {f:["kasun","dilan","nuwan","chamara","sahan","nimali","nilmini","tharushi","dilini","hasini"],l:["perera","fernando","silva","jayasinghe","bandara","wanniarachchi","gunasekara","dissanayake","wickramasinghe","rathnayake"]},
   {f:["bibek","sujan","prakash","rajan","nabin","sita","gita","mina","sabina","anita"],l:["sharma","poudel","thapa","adhikari","bhattarai","karki","shrestha","gurung","magar","rai"]},
-  {f:["aarav","vivaan","aditya","arjun","rohan","rahul","karan","nikhil","ananya","priya"],l:["sharma","verma","gupta","agarwal","singh","yadav","mishra","pandey","joshi","nair"]},
-  {f:["ayaan","imran","zaid","faizan","arif","salman","farhan","ayesha","zara","sana"],l:["khan","ahmed","ali","hussain","sheikh","syed","ansari","qureshi","siddiqui","mirza"]},
-  {f:["gurpreet","harpreet","jaspreet","manpreet","navdeep","amrit","jaskaran","simran","gurleen","navneet"],l:["singh","kaur","gill","sandhu","grewal","dhillon","bajwa","sidhu","randhawa","brar"]},
-  {f:["john","david","michael","daniel","joseph","thomas","maria","anna","grace","sophia"],l:["fernandes","dsouza","pereira","rodrigues","thomas","mathew","george","joseph","pinto","lobo"]}
+  {indian:true,f:["aarav","vivaan","aditya","arjun","rohan","rahul","karan","nikhil","sanjay","vikram","deepak","manish","suresh","ramesh","amit","rajesh","ankit","sahil","mohit","rohit","sumit","akash","vivek","pradeep","dinesh","mahesh","ravi","ajay","vijay","ashok","sunil","kamal","gopal","sachin","gaurav","prashant","nilesh","yash","kunal","varun","ishan","dev","hari","mohan","shivam","abhishek","rajat","tushar","harsh","adarsh","ayush","pranav","rudra","arnav","kabir","vihaan","dhruv","reyansh","samarth","tanmay","udit","yuvraj","naveen","praveen","rajiv","sanjeev","sudhir","manoj","alok","anil","arvind","brijesh","chetan","dheeraj","gautam","harshit","hemant","jitendra","kishore","lokesh","mukesh","narendra","prakash","rajendra","sandeep","tarun","umesh","vinay","yogesh","ananya","priya","neha","pooja","sneha","kavya","meera","divya","aarti","ishita","riya","shreya","anjali","sunita","sarita","geeta","sita","radha","lakshmi","parvati","durga","uma","tara","nisha","poonam","reena","seema","babita","kavita","savita","archana","bhavana","chanda","dipika","ekta","jaya","kiran","lata","madhu","meena","nandini","pratibha","rakhi","rupali","sadhana","tanuja","usha","vaishali","yamini","heena","jyoti","kajal","kalpana","kusum","mamta","nidhi","pallavi","payal","preeti","rachana","rekha","sandhya","shalini","sheetal","shikha","sujata","supriya","swati","vandana"],l:["sharma","verma","gupta","agarwal","singh","yadav","mishra","pandey","joshi","nair","reddy","rao","iyer","mehta","shah","patel","chauhan","tiwari","bhat","desai","dubey","srivastava","saxena","khanna","malhotra","kapoor","chopra","mehrotra","tripathi","rathore","solanki","rajput","kulkarni","naik","jain","bansal","goyal","jha","thakur","sinha","bose","chatterjee","banerjee","mukherjee","das","ghosh"]},
+  {indian:true,f:["ayaan","imran","zaid","faizan","arif","salman","farhan","irfan","adnan","sameer","bilal","usman","tariq","rizwan","aamir","fahad","naveed","owais","saif","zubair","hamza","yusuf","ibrahim","ismail","hassan","azhar","asif","kashif","nazim","shakeel","waseem","ayesha","fatima","zara","sana","rida","nida","hina","mariam","alina","iqra","shabnam","noor","amna","huma","sadia","zoya","bushra","farah","gulnaz","jameela","khadeeja","lubna","mahira","nafisa","parveen","rubina","saba","tabassum","uzma","yasmeen","aabida","afreen","nazia","rafia","shazia","yasmin"],l:["khan","ahmed","ali","hussain","sheikh","syed","ansari","qureshi","siddiqui","shaikh","mirza","malik","pathan","farooqui","rizvi","baig","kazi","naqvi","rana","chaudhary"]},
+  {indian:true,f:["gurpreet","harpreet","jaspreet","manpreet","navdeep","amrit","jaskaran","arjan","gagan","prabhjot","tejinder","sukhwinder","harjot","meet","ekam","jashan","harman","gurvinder","surinder","kuldeep","jaspal","amarjit","baljit","charanjit","darshan","gurmeet","harsimran","jaskirat","manjeet","navjot","prabh","satnam","surjeet","simran","kiran","raman","jasleen","gurleen","navneet","harleen","manjot","seerat","jasnoor","guneet","kirandeep","simar","amandeep","baljeet","charanpreet","inderpreet","jasmine","kamaljit","manmeet","pardeep","ramanpreet","sukhdeep","tanveer","arpinder","daljeet","harmeet","japneet","jasmeet","manvir","navreet","prabhleen"],l:["singh","kaur","gill","sandhu","grewal","dhillon","bajwa","sidhu","randhawa","mann","brar","sekhon","cheema","athwal","malhi","dosanjh","hayer","kaler","shergill"]},
+  {indian:true,f:["john","david","michael","daniel","joseph","thomas","peter","james","samuel","joshua","vincent","anthony","george","paul","steven","matthew","mark","luke","andrew","simon","maria","anna","grace","mary","sarah","rebecca","rachel","elizabeth","christina","angela","julia","sophia","emily","emma","olivia","ava","isabella","mia","charlotte","amelia","abigail","sofia","lily","scarlett"],l:["fernandes","dsouza","pereira","rodrigues","thomas","mathew","george","joseph","jacob","john","williams","brown","taylor","pinto","lobo","sequeira","dsa","noronha","gomes"]}
 ];
+  var MIDDLE = ["kumar","singh","rajput","kumari","devi","nath","prasad","chandra","ram","shyam","lal","pal","raj","kiran","jot","deep","preet","nand","sai","om","anand","prabhu","sharan","dhar","shankar","narayan","dev","mohan","krishna","kaur"];
   function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
   function clean(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
   function randomLocal(used) {
-    for (var attempt = 0; attempt < 120; attempt++) {
+    for (var attempt = 0; attempt < 300; attempt++) {
       var id = pick(IDENTITIES);
       var first = clean(pick(id.f));
       var last = clean(pick(id.l));
       var year = 1980 + Math.floor(Math.random() * 25); // 1980-2004
-      var base = first + "." + last + year;
-      var candidates = [base, first + last + year, first + "." + last + "." + year, first + last + year + Math.floor(10 + Math.random() * 90)];
+      var base, candidates;
+      if (id.indian && Math.random() < 0.5) {
+        var mid = clean(pick(MIDDLE));
+        base = first + "." + mid + "." + last + year;
+        candidates = [base, first + mid + last + year, first + "." + mid + "." + last + "." + year];
+      } else {
+        base = first + "." + last + year;
+        candidates = [base, first + last + year, first + "." + last + "." + year, first + last + year + Math.floor(10 + Math.random() * 90)];
+      }
       for (var i = 0; i < candidates.length; i++) if (!used.has(candidates[i])) return candidates[i];
     }
     return "user" + Date.now() + Math.floor(Math.random() * 1000);

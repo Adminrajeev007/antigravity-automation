@@ -1,19 +1,30 @@
 #!/bin/sh
-# Recover the USB-tether + SOCKS path and clear stuck Octo profiles.
-# Run as the normal user. It will ask for sudo for BetterTether only.
+# Recover the HTTP proxy path and clear stuck Octo profiles.
 set -u
 
 BUNDLE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${ANTIG_LOG_ROOT:-$HOME/Desktop/antig-logs}"
 LOG="$ROOT/antig-recover.log"
+CFG="${ANTIG_PROXY_CONFIG:-$BUNDLE/proxy.local.json}"
+[ -f "$CFG" ] || CFG="$BUNDLE/antig-orchestrator-mac/proxy.local.json"
 mkdir -p "$ROOT"
 touch "$LOG"
 
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 
-ADB="$(command -v adb || echo /opt/homebrew/bin/adb)"
-IFACE="$(cat /tmp/usb-octo-iface 2>/dev/null || true)"
-[ -n "$IFACE" ] || IFACE="utun10"
+cfg() {
+  python3 -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+value = data.get(sys.argv[2], "")
+print("" if value is None else value)
+' "$CFG" "$1" 2>/dev/null
+}
+
+PROXY_URL="$(cfg url)"
 
 log "recovery start"
 
@@ -47,39 +58,23 @@ for p in rows:
 print('active after:', call('/api/profiles/active'))
 PY
 
-# 2. USB tether function, then BetterTether.
-"$ADB" -s "${ANTIG_ANDROID_SERIAL:-QWXSKBCQCUHUXKXS}" shell 'svc usb setFunctions rndis,adb' >/dev/null 2>&1 || true
-sleep 3
-if ! curl -s -m 3 http://127.0.0.1:9400/api/status | grep -q '"connected":true'; then
-  log "restarting BetterTether (sudo required)"
-  sudo launchctl kickstart -k system/com.s4wbvnny.bettertether || true
+if [ -z "$PROXY_URL" ]; then
+  log "recovery FAILED — proxy url missing in $CFG"
+  exit 1
 fi
-sleep 8
 
-# 3. Start a fresh user-owned proxy (avoids the no-tty/nohup failure).
-pkill -f 'usb-octo-socks.py' 2>/dev/null || true
-sleep 1
-SRC="$(curl -s -m 3 http://127.0.0.1:9400/api/status | sed -n 's/.*"clientIP":"\([^"]*\)".*/\1/p')"
-python3 - "$SRC" "$IFACE" >>"$LOG" 2>&1 <<'PY'
-import os, subprocess, sys
-src, iface = (sys.argv[1] if len(sys.argv) > 1 else ''), (sys.argv[2] if len(sys.argv) > 2 else 'utun10')
-log = open('/tmp/usb-octo-socks-recover.log', 'ab')
-env = os.environ.copy()
-env.update(SOCKS_PORT='1080', SOCKS_IF=iface, SOCKS_SRC=src)
-p = subprocess.Popen(['/opt/anaconda3/bin/python3', '/tmp/usb-octo-socks.py'],
-    stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-    start_new_session=True, env=env)
-open('/tmp/usb-octo-socks-recover.pid', 'w').write(str(p.pid))
-print('proxy pid', p.pid, 'iface', iface, 'src', src)
-PY
-sleep 2
+# 2. Verify the proxy, rotate the IP once if the egress is empty.
+PROXY="$(curl -4 -s -m 12 --proxy "$PROXY_URL" https://api.ipify.org || true)"
+if [ -z "$PROXY" ]; then
+  log "proxy egress empty; rotating IP"
+  "$BUNDLE/toggle-batch-ip.sh" >>"$LOG" 2>&1 || true
+  PROXY="$(curl -4 -s -m 12 --proxy "$PROXY_URL" https://api.ipify.org || true)"
+fi
+log "proxy=$PROXY"
 
-DIRECT="$(curl -4 -s -m 10 --interface "$IFACE" https://api.ipify.org || true)"
-PROXY="$(curl -4 -s -m 10 --socks5-hostname 127.0.0.1:1080 https://api.ipify.org || true)"
-log "direct=$DIRECT proxy=$PROXY iface=$IFACE"
 if [ -n "$PROXY" ]; then
   log "recovery OK"
   exit 0
 fi
-log "recovery FAILED — check USB tether/phone data or reconnect the cable"
+log "recovery FAILED — proxy $PROXY_URL is not reachable"
 exit 1

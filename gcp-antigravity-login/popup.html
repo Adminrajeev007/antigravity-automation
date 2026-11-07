@@ -60,6 +60,14 @@
         </div>
         <p id="sheetSyncStatus" class="hint">Sheet sync: waiting...</p>
         <div class="field">
+          <label for="emailOrder">Email order</label>
+          <select id="emailOrder">
+            <option value="desc">Latest to oldest (newest first)</option>
+            <option value="asc">Oldest to latest</option>
+          </select>
+        </div>
+        <p class="hint">Completed emails are skipped. Default: latest to oldest.</p>
+        <div class="field">
           <label for="stuckMinutes">Stuck timer (minutes)</label>
           <input id="stuckMinutes" type="number" min="0.5" max="60" step="0.5" value="2.5" />
         </div>

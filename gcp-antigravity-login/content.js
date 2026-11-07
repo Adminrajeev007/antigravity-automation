@@ -277,15 +277,13 @@ async function failCurrentAndNext(state, reason) {
   loginFailHandledFor = intern.email;
 
   setStatus((reason || "Account failed") + ": " + intern.email + ". Moving to next...");
-  await updateIntern(state.currentIndex, { status: "failed", note: reason || "failed" });
-  await advance();
-  await randDelay(600, 1200);
   const res = await sendMessageAsync({
     type: "LOGIN_FAILED",
     email: intern.email,
     reason: reason || "failed"
   });
   if (!res || !res.ok) {
+    await updateIntern(state.currentIndex, { status: "failed", note: reason || "failed" });
     setStatus("Could not start next login: " + String((res && res.error) || "unknown"));
   }
 }
@@ -603,10 +601,8 @@ async function loginHandleOtp(state) {
   // This tab may belong to a different account (stale/parallel login tab).
   // Never fetch or enter the current account's OTP on another account's page.
   const shownEmail = loginPageEmail();
-  if (shownEmail && shownEmail !== email.toLowerCase()) {
-    setStatus("Stale OTP page for " + shownEmail + " — restarting login for " + email + "...");
-    await randDelay(800, 1200);
-    location.href = "https://console.cloud.google.com/AddSession";
+    if (shownEmail && shownEmail !== email.toLowerCase()) {
+    setStatus("Stale OTP page for " + shownEmail + " — waiting for the owner tab.");
     return;
   }
 
@@ -1112,7 +1108,15 @@ async function handleCaptcha(state) {
   });
 }
 
+async function drivesFlow() {
+  if (!IS_TOP || stopped || !extAlive()) return false;
+  const res = await sendMessageAsync({ type: "AM_I_FLOW_OWNER" });
+  return !!(res && res.owner);
+}
+
 async function runForCurrentPage(manual) {
+  if (!IS_TOP) return;
+  if (!manual && !(await drivesFlow())) return;
   const page = detectPage();
   const state = await getState();
   if (page !== "captcha" && state.captchaWaiting) {
@@ -1148,6 +1152,8 @@ async function runForCurrentPage(manual) {
   }
 }
 
+if (!IS_TOP) return;
+
 let lastUrl = location.href;
 
 timers.push(setInterval(() => {
@@ -1169,7 +1175,7 @@ timers.push(setInterval(() => {
 
 // Login pages can render late; keep retrying.
 timers.push(setInterval(async () => {
-  if (!extAlive() || stopped || running) return;
+  if (!extAlive() || stopped || running || !(await drivesFlow())) return;
   const page = detectPage();
   if (page === "google-signin" || page === "email" || page === "login-otp") {
     const state = await getState();
@@ -1179,7 +1185,7 @@ timers.push(setInterval(async () => {
 
 // After login, the console page is the trigger to start OAuth.
 timers.push(setInterval(async () => {
-  if (!extAlive() || stopped || running) return;
+  if (!extAlive() || stopped || running || !(await drivesFlow())) return;
   if (detectPage() !== "console") return;
   const state = await getState();
   if (state.config.autoRun) handleConsole(state);
@@ -1187,28 +1193,28 @@ timers.push(setInterval(async () => {
 
 // OAuth/manual pages: automate even if Live is stopped.
 timers.push(setInterval(async () => {
-  if (!extAlive() || stopped) return;
+  if (!extAlive() || stopped || !(await drivesFlow())) return;
   if (detectPage() !== "oauth") return;
   const state = await getState();
   handleOauthPage(state);
 }, 1500));
 
 timers.push(setInterval(async () => {
-  if (!extAlive() || stopped) return;
+  if (!extAlive() || stopped || !(await drivesFlow())) return;
   if (detectPage() !== "authcode") return;
   const state = await getState();
   handleAuthCodePage(state);
 }, 1500));
 
 timers.push(setInterval(async () => {
-  if (!extAlive() || stopped) return;
+  if (!extAlive() || stopped || !(await drivesFlow())) return;
   if (!googleUnknownError()) return;
   const state = await getState();
   if (!state.proxyHold && state.config.autoRun) handleGoogleUnknownError(state);
 }, 1500));
 
 timers.push(setInterval(async () => {
-  if (!extAlive() || stopped || running) return;
+  if (!extAlive() || stopped || running || !(await drivesFlow())) return;
   if (!accountDisabled()) return;
   const state = await getState();
   if (state.config.autoRun) failCurrentAndNext(state, "account disabled");

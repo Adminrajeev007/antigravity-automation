@@ -32,7 +32,7 @@ async function getState() {
   s.successEmails = Array.isArray(s.successEmails) ? s.successEmails : [];
   s.ignoredEmails = Array.isArray(s.ignoredEmails) ? s.ignoredEmails : [];
   s.currentIndex = typeof s.currentIndex === "number" ? s.currentIndex : 0;
-  s.config = { autoRun: true, fastMode: false, live: true, stuckMinutes: 2.5, ...(s.config || {}) };
+  s.config = { autoRun: true, fastMode: false, live: true, stuckMinutes: 2.5, emailOrder: "desc", ...(s.config || {}) };
   s.proxy = { ...DEFAULT_PROXY, ...(s.proxy || {}) };
   return s;
 }
@@ -276,6 +276,9 @@ async function render() {
   if ($("sheetSyncStatus")) {
     $("sheetSyncStatus").textContent = state.sheetSyncStatus || "Sheet sync: waiting...";
   }
+  if ($("emailOrder")) {
+    $("emailOrder").value = state.config.emailOrder === "asc" ? "asc" : "desc";
+  }
   applyCode(state);
   applyOauthStatus(state);
   renderProgress(state);
@@ -478,12 +481,9 @@ $("oauthBtn").onclick = () => chrome.runtime.sendMessage({ type: "OPEN_OAUTH" })
 
 $("skipCurrentBtn").onclick = async () => {
   const state = await getState();
-  const current = state.interns[state.currentIndex];
-  const intern = current && current.status === "pending"
-    ? current
-    : state.interns.find((item) => item.status === "pending");
-  if (!intern) return;
-  await chrome.storage.local.set({ currentIndex: state.interns.findIndex((item) => item.email === intern.email) });
+  const intern = state.interns[state.currentIndex];
+  if (!intern || intern.status === "done") return;
+  await chrome.storage.local.set({ currentIndex: state.currentIndex });
   chrome.runtime.sendMessage({
     type: "LOGIN_FAILED",
     email: intern.email,
@@ -609,6 +609,17 @@ $("proxyCustomUrl").onchange = () => {
 };
 
 $("applyProxyBtn").onclick = applyProxyFromForm;
+
+$("emailOrder").onchange = async () => {
+  const state = await getState();
+  const emailOrder = $("emailOrder").value === "asc" ? "asc" : "desc";
+  await chrome.storage.local.set({
+    config: { ...state.config, emailOrder }
+  });
+  chrome.runtime.sendMessage({ type: "SYNC_SHEET" }, () => {
+    if (chrome.runtime.lastError) return;
+  });
+};
 
 $("stuckMinutes").onchange = async () => {
   const value = Math.max(0.5, Math.min(60, Number($("stuckMinutes").value) || 2.5));

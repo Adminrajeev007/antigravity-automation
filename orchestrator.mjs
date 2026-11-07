@@ -83,9 +83,20 @@ const SIGNUP_URL = 'https://console.cloud.google.com/freetrial'
 const PROFILE_PREFIX = 'GCP Intern Auto'
 const SESSION_TIMEOUT_MS = Number(process.env.ORCH_SESSION_TIMEOUT_MS || 15 * 60 * 1000)
 const AIRPLANE_SECONDS = Number(process.env.ORCH_AIRPLANE_SECONDS || 6)
-const PROXY_SERVER = process.env.ORCH_PROXY_SERVER || ''
-const PROXY_PORT = process.env.ORCH_PROXY_PORT || (String(PROXY_SERVER).match(/:(\d+)/) || [])[1] || '1080'
+const PROXY_CONFIG = loadProxyConfig()
+const PROXY_URL = process.env.ORCH_PROXY_URL || PROXY_CONFIG.url || process.env.ORCH_PROXY_SERVER || ''
+const PROXY_MODE = Boolean(PROXY_URL)
+const PROXY_PORT = process.env.ORCH_PROXY_PORT || (String(PROXY_URL).match(/:(\d+)/) || [])[1] || '1080'
 const ROTATE_USB = process.env.ORCH_ROTATE_USB === '1'
+const COMBO = process.env.ORCH_COMBO === '1'
+const ROTATE_IP = process.env.ORCH_ROTATE_IP === '0'
+  ? false
+  : (process.env.ORCH_ROTATE_IP === '1' || ROTATE_USB || PROXY_MODE)
+const IP_API_BASE = process.env.ORCH_IP_API_BASE || PROXY_CONFIG.ipApiBase || ''
+const IP_API_KEY = process.env.ORCH_IP_API_KEY || PROXY_CONFIG.ipApiKey || ''
+const IP_POLL_TIMEOUT_MS = Number(process.env.ORCH_IP_TIMEOUT_MS || PROXY_CONFIG.pollTimeoutMs || 180000)
+const IP_POLL_INTERVAL_MS = Number(process.env.ORCH_IP_POLL_MS || PROXY_CONFIG.pollIntervalMs || 3000)
+const TETHER_IP = process.env.ORCH_TETHER_IP || PROXY_CONFIG.tetherIp || ''
 const SHEET_WEBAPP_URL = process.env.SHEET_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzoCHT0aGmxBzTD_j9gEU1JFxBW52_NUj7x-NHW_D_W_PmIZ4YIWWCOWtIcR2fojkfs/exec'
 const SHEET_TOKEN = process.env.SHEET_TOKEN || 'change-this-sheet-token'
 const MAX_RUNS = Number(process.env.ORCH_MAX_RUNS || 0)
@@ -93,7 +104,74 @@ const BATCH_SIZE = Math.max(1, Number(process.env.ORCH_BATCH || 2))
 const EXT_BASE_ENV = process.env.ORCH_EXT_ID || ''
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const log = (...args) => console.log(new Date().toISOString().slice(11, 19), ...args)
+const LOG_ERR_RE = /\b(error|failed|failure|timeout|refused|unreachable|could not|empty)\b/i
+const log = (...args) => {
+  const line = new Date().toISOString().slice(11, 19) + ' ' + args.join(' ')
+  if (LOG_ERR_RE.test(args.join(' '))) console.log('\x1b[31m' + line + '\x1b[0m')
+  else console.log(line)
+}
+
+let lastWatchState = ''
+async function watchProxyHealth() {
+  try {
+    const ip = await proxyEgress()
+    const info = apiIp()
+    const running = !!(info && info.running)
+    const state = (ip || '') + '|' + (running ? 'rotating' : 'idle')
+    if (state === lastWatchState) return
+    lastWatchState = state
+    if (!ip) log('PROXY CHECK: egress EMPTY — proxy unreachable')
+    else if (running) log(`PROXY CHECK: egress ${ip} · phone rotating…`)
+    else log(`PROXY CHECK: egress ${ip} · idle`)
+  } catch (e) {
+    log(`PROXY CHECK: error ${String((e && e.message) || e)}`)
+  }
+}
+const isIp = (value) => /^\d{1,3}(\.\d{1,3}){3}$/.test(String(value || ''))
+
+function loadProxyConfig() {
+  const candidates = [
+    process.env.ORCH_PROXY_CONFIG,
+    path.join(process.cwd(), 'proxy.local.json'),
+    path.join(path.dirname(new URL(import.meta.url).pathname), 'proxy.local.json'),
+  ].filter(Boolean)
+  for (const file of candidates) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch {}
+  }
+  return {}
+}
+
+function proxyLabel() {
+  try {
+    const u = new URL(PROXY_URL)
+    return `${u.protocol}//${u.host}`
+  } catch {
+    return PROXY_URL
+  }
+}
+
+function profileProxy() {
+  try {
+    const u = new URL(PROXY_URL)
+    const type = u.protocol.replace(':', '').toLowerCase()
+    const scheme = ['http', 'https', 'socks4', 'socks5'].includes(type) ? type : 'http'
+    return {
+      type: 'new',
+      data: {
+        type: scheme,
+        ip: u.hostname,
+        port: Number(u.port || (scheme === 'https' ? 443 : 80)),
+        login: decodeURIComponent(u.username || ''),
+        password: decodeURIComponent(u.password || ''),
+        title: PROXY_URL,
+      },
+    }
+  } catch {
+    return { type: 'direct' }
+  }
+}
 
 let EXT = null // { zip, compoundId, extBase, version }
 const sessions = new Map()
@@ -389,9 +467,8 @@ async function createProfile(name, extId) {
   if (!uuid) throw new Error('Octo did not return a profile uuid')
 
   const detail = (await octo('GET', `/api/v2/profiles/${uuid}`)).data
-  const proxyServer = process.env.ORCH_PROXY_SERVER || ''
   const launchArgs = Array.isArray(detail.launch_args) ? detail.launch_args.slice() : []
-  if (proxyServer) launchArgs.push(`--proxy-server=${proxyServer}`)
+  const proxy = PROXY_MODE ? profileProxy() : (detail.proxy || { type: 'direct' })
   const body = {
     name,
     description: detail.description ?? '',
@@ -403,7 +480,7 @@ async function createProfile(name, extId) {
     folder: detail.folder ?? null,
     pinned_tag: detail.pinned_tag ?? null,
     fp: (detail.fingerprint && detail.fingerprint.data) || detail.fp || {},
-    proxy: detail.proxy || { type: 'direct' },
+    proxy,
     storage_options: detail.storage_options ?? {},
     local_cache: Boolean(detail.local_cache),
     extensions: [extId],
@@ -758,11 +835,39 @@ async function checkSignupError(sess) {
 
   try {
     const list = await fetch(`http://127.0.0.1:${sess.debugPort}/json/list`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())
-    const billing = (list || []).some((t) => {
+    let billing = (list || []).some((t) => {
       const u = String(t.url || '').toLowerCase()
       return u.includes('/freetrial/signup/billing/') || (u.includes('console.cloud.google.com/freetrial') && u.includes('billing'))
     })
+    if (!billing) {
+      const page = (list || []).find((t) => t.type === 'page' && /console\.cloud\.google\.com\/(freetrial|welcome)/i.test(String(t.url || '')))
+      if (page && page.webSocketDebuggerUrl) {
+        try {
+          const status = await cdpEvaluate(
+            page.webSocketDebuggerUrl,
+            `(() => { const el = document.getElementById('gcp-auto-status'); return el ? el.textContent : ''; })()`,
+            5000,
+          )
+          if (/billing page\. address/i.test(String(status || '')) && /auto-fills/i.test(String(status || ''))) {
+            billing = true
+          }
+        } catch {}
+      }
+    }
     if (billing) {
+      if (COMBO) {
+        if (!sess.comboBillingLogged) {
+          sess.comboBillingLogged = true
+          sess.comboBillingAt = Date.now()
+          log(`billing reached for ${sess.email}; waiting for combo OAuth`)
+          await saveBillingToSheet(sess.email)
+        }
+        if (sess.comboBillingAt && Date.now() - sess.comboBillingAt > 300000) {
+          log(`combo OAuth timeout for ${sess.email}; deleting profile`)
+          await deleteSession(sess, 'combo-oauth-timeout', 0)
+        }
+        return
+      }
       if (sess.billingHandling) return
       sess.billingHandling = true
       log(`billing page detected for ${sess.email}; saving to sheet and closing profile`)
@@ -770,14 +875,38 @@ async function checkSignupError(sess) {
       await deleteSession(sess, 'billing', 0)
       return
     }
+
     const bad = (list || []).some((t) => {
       const u = String(t.url || '').toLowerCase()
       const title = String(t.title || '').toLowerCase()
-      return u.includes('signup/error') || u.includes('error=bad_request') || title.includes("let's try something else")
+      return u.includes('signup/error') || u.includes('signin-error') ||
+        u.includes('/signin/error') || u.includes('error=bad_request') ||
+        title.includes("let's try something else") || title.includes('lets try something else') ||
+        title.includes('signin-error')
     })
     if (bad) {
       log(`signup error page detected for ${sess.email}, deleting profile`)
       await deleteSession(sess, 'signup-error', 0)
+      return
+    }
+
+    if (COMBO && sess.comboBillingLogged) return
+
+    const page = (list || []).find((t) => t.type === 'page' && /^https?:/i.test(String(t.url || '')))
+    if (page && page.webSocketDebuggerUrl) {
+      const url = String(page.url || '')
+      if (url !== sess.monitoredUrl) {
+        sess.monitoredUrl = url
+        sess.monitoredUrlSince = Date.now()
+      } else if (Date.now() - (sess.monitoredUrlSince || 0) >= 120000
+        && Date.now() - (sess.lastUrlRefreshAt || 0) >= 120000) {
+        sess.lastUrlRefreshAt = Date.now()
+        sess.monitoredUrlSince = Date.now()
+        log(`same URL for 2 minutes (${sess.email}); refreshing ${url}`)
+        await cdpCall(page.webSocketDebuggerUrl, 'Page.reload', { ignoreCache: true }, 10000).catch((e) => {
+          log(`page refresh failed for ${sess.email}: ${e.message}`)
+        })
+      }
     }
   } catch {}
 }
@@ -835,6 +964,7 @@ const config = loadConfig()
 const android = new AndroidService(config.android)
 
 async function ensureTether() {
+  if (PROXY_MODE) return ensureProxy()
   const requireUsb = config.android.requireUsbTether !== false
   if (!requireUsb) {
     const net = await hostNetwork()
@@ -856,17 +986,88 @@ async function ensureTether() {
   return net
 }
 
+function curlText(args, timeoutMs = 15000) {
+  const out = execFileSync('curl', [
+    '-4', '-sS', '-m', String(Math.max(2, Math.round(timeoutMs / 1000))),
+    ...args,
+  ], { encoding: 'utf8', timeout: timeoutMs + 2000 }).trim()
+  return out
+}
+
 function proxyEgress(timeoutMs = 12000) {
+  if (!PROXY_URL) return null
   try {
-    const out = execFileSync('curl', [
-      '-4', '-s', '-m', String(Math.max(2, Math.round(timeoutMs / 1000))),
-      '--socks5-hostname', `127.0.0.1:${PROXY_PORT}`,
-      'https://api.ipify.org',
-    ], { encoding: 'utf8', timeout: timeoutMs + 2000 }).trim()
-    return /^\d{1,3}(\.\d{1,3}){3}$/.test(out) ? out : null
+    const out = curlText(['--proxy', PROXY_URL, 'https://api.ipify.org'], timeoutMs)
+    return isIp(out) ? out : null
   } catch {
     return null
   }
+}
+
+function apiUrl(pathname) {
+  if (!IP_API_BASE || !IP_API_KEY) return ''
+  const base = IP_API_BASE.replace(/\/+$/, '')
+  const sep = pathname.includes('?') ? '&' : '?'
+  return `${base}${pathname}${sep}key=${encodeURIComponent(IP_API_KEY)}`
+}
+
+function apiIp() {
+  const url = apiUrl('/api/ip')
+  if (!url) return null
+  try {
+    const data = JSON.parse(curlText([url], 15000))
+    return { ip: isIp(data.ip) ? data.ip : null, running: data.running === true }
+  } catch {
+    return null
+  }
+}
+
+function apiStats() {
+  if (!IP_API_BASE) return null
+  try {
+    const base = IP_API_BASE.replace(/\/+$/, '')
+    return JSON.parse(curlText([`${base}/stats`], 8000))
+  } catch {
+    return null
+  }
+}
+
+async function apiSetPool(ips) {
+  if (!IP_API_BASE || !Array.isArray(ips) || ips.length === 0) return false
+  try {
+    const base = IP_API_BASE.replace(/\/+$/, '')
+    const res = await fetch(`${base}/pool`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ips }),
+      signal: AbortSignal.timeout(8000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+function triggerIpRotate() {
+  const url = apiUrl('/api/rotate')
+  if (!url) throw new Error('IP rotate API is not configured')
+  let data = null
+  try { data = JSON.parse(curlText([url], 20000)) } catch {}
+  if (data && data.error) throw new Error(String(data.error))
+  if (data && data.ok === false) throw new Error(data.message || 'rotate API failed')
+  return data || {}
+}
+
+async function ensureProxy() {
+  if (!PROXY_URL) throw new Error('proxy is not configured (proxy.local.json)')
+  if (TETHER_IP) await apiSetPool([TETHER_IP]).catch(() => {})
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const ip = await proxyEgress()
+    if (ip) return { internet: true, egressIp: ip, proxy: true }
+    if (attempt === 1 || attempt % 5 === 0) log(`waiting for proxy ${proxyLabel()} (${attempt}/20)`)
+    await sleep(3000)
+  }
+  throw new Error(`proxy is not reachable: ${proxyLabel()}`)
 }
 
 function fixUsbTether(attempt = 1) {
@@ -880,37 +1081,52 @@ function fixUsbTether(attempt = 1) {
 }
 
 async function rotateProxyIp(beforeIp) {
-  const before = beforeIp || (await proxyEgress()) || 'unknown'
+  const before = beforeIp || (await proxyEgress()) || (apiIp()?.ip) || 'unknown'
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    log(`USB IP cycle ${attempt}/3 (${AIRPLANE_SECONDS}s)...`)
+    log(`IP rotate API attempt ${attempt}/3...`)
     try {
-      await android.reset({ duration: AIRPLANE_SECONDS })
+      triggerIpRotate()
     } catch (e) {
-      log(`USB cycle error: ${e.message}`)
-      fixUsbTether(attempt)
-    }
-    await android.tetherAction({ action: 'on' }).catch(() => {})
-    if (!(await proxyEgress())) {
-      fixUsbTether(attempt)
-      await sleep(3000)
-    }
-
-    let last = null
-    for (let wait = 0; wait < 20; wait += 1) {
-      await sleep(2500)
-      const ip = await proxyEgress()
-      if (ip) last = ip
-      if (ip && ip !== before) {
-        return { before, after: ip, network: null }
+      const msg = String(e.message || e)
+      log(`IP rotate API error: ${msg}`)
+      const wait = Number((msg.match(/wait\s+(\d+)\s*s/i) || [])[1] || 0)
+      if (wait > 0) {
+        await sleep((wait + 2) * 1000)
+        try {
+          triggerIpRotate()
+          log('IP rotate API retry accepted')
+        } catch (e2) {
+          log(`IP rotate API retry error: ${String(e2.message || e2)}`)
+        }
       }
     }
-    log(`USB IP unchanged (${last || 'none'}), retrying`)
-    await sleep(2000)
+
+    const deadline = Date.now() + IP_POLL_TIMEOUT_MS
+    let last = null
+    while (Date.now() < deadline) {
+      await sleep(IP_POLL_INTERVAL_MS)
+      const info = apiIp()
+      if (!info || info.running) continue
+      if (!info.ip || info.ip === before) continue
+      const egress = await proxyEgress()
+      last = egress || info.ip
+      const fallbackIp = (apiStats() || {}).external_ip
+      if (egress && egress !== before && (!fallbackIp || egress !== fallbackIp)) {
+        log(`proxy IP changed: ${before} -> ${egress}`)
+        return { before, after: egress, network: { internet: true, egressIp: egress, proxy: true } }
+      }
+    }
+    log(`IP unchanged (${last || 'none'}), retrying`)
   }
-  throw new Error('could not get a new USB proxy IP')
+  throw new Error('could not get a new proxy IP')
 }
 
 async function cycleIp(beforeIp) {
+  if (PROXY_MODE) {
+    if (ROTATE_IP) return rotateProxyIp(beforeIp)
+    const ip = beforeIp || (await proxyEgress())
+    return { before: ip, after: ip, network: { internet: true, egressIp: ip, proxy: true } }
+  }
   const requireUsb = config.android.requireUsbTether !== false
   if (!requireUsb) {
     if (ROTATE_USB) return rotateProxyIp(beforeIp)
@@ -991,12 +1207,37 @@ const server = http.createServer(async (req, res) => {
     if (!sess && email) {
       sess = [...sessions.values()].find((s) => String(s.email || '').toLowerCase() === email) || null
     }
+    const billingEmail = email || (sess && sess.email) || ''
+    if (billingEmail) {
+      try { await saveBillingToSheet(billingEmail) } catch (e) { log(`billing sheet save error for ${billingEmail}: ${e.message}`) }
+    }
     if (sess) {
-      finishSession(sess, 'billing')
-      log(`billing reached for ${sess.email}`)
+      if (COMBO) {
+        if (!sess.comboBillingLogged) {
+          sess.comboBillingLogged = true
+          sess.comboBillingAt = Date.now()
+          log(`billing reached for ${sess.email}; combo OAuth will continue`)
+        }
+      } else {
+        finishSession(sess, 'billing')
+        log(`billing reached for ${sess.email}`)
+      }
     } else {
       log(`billing reached for ${email || uuid || 'unknown'}`)
     }
+    send(res, 200, { ok: true })
+    return
+  }
+  if (req.method === 'POST' && req.url.startsWith('/combo-complete')) {
+    const body = await readBody(req)
+    const email = String(body.email || '').toLowerCase()
+    const uuid = String(body.uuid || '')
+    let sess = uuid ? sessions.get(uuid) : null
+    if (!sess && email) {
+      sess = [...sessions.values()].find((s) => String(s.email || '').toLowerCase() === email) || null
+    }
+    log(`combo complete for ${email || uuid || 'unknown'}`)
+    if (sess) await deleteSession(sess, 'combo-complete', 0)
     send(res, 200, { ok: true })
     return
   }
@@ -1041,6 +1282,12 @@ async function main() {
   await new Promise((resolve) => server.listen(PORT, '127.0.0.1', resolve))
   log(`control server on http://127.0.0.1:${PORT}`)
   log(`octo api port ${octoPort()}`)
+  if (TETHER_IP) {
+    log(`proxy pool guard: keeping pool at ${TETHER_IP}`)
+    apiSetPool([TETHER_IP]).catch(() => {})
+    try { setInterval(() => { apiSetPool([TETHER_IP]).catch(() => {}) }, 20000).unref() } catch {}
+  try { setInterval(() => { watchProxyHealth().catch(() => {}) }, 15000).unref() } catch {}
+  }
 
   await uploadExtension()
   flushSheetQueue().catch(() => {})
@@ -1058,7 +1305,8 @@ async function main() {
 
   try {
     const initial = await ensureTether()
-    log(`android ready; usb tether connected, egress ${initial.egressIp}`)
+    if (PROXY_MODE) log(`proxy ready ${proxyLabel()}; egress ${initial.egressIp}`)
+    else log(`android ready; usb tether connected, egress ${initial.egressIp}`)
   } catch (e) {
     log(`android not ready yet: ${e.message} (will keep retrying)`)
   }
@@ -1069,9 +1317,11 @@ async function main() {
     log(`===== batch ${batch}${MAX_RUNS ? '/' + MAX_RUNS : ''} (${BATCH_SIZE} profile${BATCH_SIZE > 1 ? 's' : ''}) =====`)
     try {
       await ensureTether()
-      const before = ROTATE_USB ? (await proxyEgress()) : (await hostNetwork()).egressIp
+      const before = PROXY_MODE
+        ? (await proxyEgress())
+        : (ROTATE_USB ? (await proxyEgress()) : (await hostNetwork()).egressIp)
       const cycled = await cycleIp(before)
-      log(`IP ${cycled.before} -> ${cycled.after} (USB tether)`)
+      log(`IP ${cycled.before} -> ${cycled.after} (${PROXY_MODE ? 'proxy' : 'USB tether'})`)
 
       const emails = generateBatchEmails(BATCH_SIZE)
       log(`batch emails: ${emails.join(', ')}`)

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Create and start a dedicated Octo profile for GCP Antigravity Login.
- * Uploads the bundled login zip, attaches it, disables the old SOCKS proxy,
+ * Uploads the bundled login zip, attaches it, enables the HTTP proxy,
  * forces the Sheet URL/token, and starts the live login loop.
  *
  * Run from the antig-orchestrator-mac folder:
@@ -13,7 +13,25 @@ import path from 'node:path'
 
 const SHEET = 'https://script.google.com/macros/s/AKfycbzoCHT0aGmxBzTD_j9gEU1JFxBW52_NUj7x-NHW_D_W_PmIZ4YIWWCOWtIcR2fojkfs/exec'
 const SHEET_TOKEN = 'change-this-sheet-token'
-const ZIP = process.env.LOGIN_ZIP || path.join(process.cwd(), 'gcp-antigravity-login-v2.9.23.zip')
+const ZIP = process.env.LOGIN_ZIP || path.join(process.cwd(), 'gcp-antigravity-login-v2.9.39.zip')
+
+function loadProxyConfig() {
+  for (const file of [
+    process.env.ORCH_PROXY_CONFIG,
+    path.join(process.cwd(), 'proxy.local.json'),
+    path.join(path.dirname(new URL(import.meta.url).pathname), 'proxy.local.json'),
+  ].filter(Boolean)) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch (e) {}
+  }
+  return {}
+}
+
+const PROXY_CFG = loadProxyConfig()
+const USE_PROXY = process.env.LOGIN_USE_PROXY !== '0'
+const PROXY_URL = process.env.LOGIN_PROXY_URL || PROXY_CFG.url
+  || 'http://testuser:testpass@192.168.31.250:1080'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -155,6 +173,11 @@ async function main() {
     if (!uuid) throw new Error('Octo did not return a profile uuid')
     detail = (await api(port, 'GET', `/api/v2/profiles/${encodeURIComponent(uuid)}`)).data
   }
+  const already = (await activeNow()).some((p) => p.uuid === uuid)
+  if (already) {
+    try { await api(port, 'POST', '/api/profiles/stop', { uuid }) } catch (e) {}
+    await sleep(1200)
+  }
   const body = {
     name,
     description: detail.description ?? '',
@@ -172,11 +195,6 @@ async function main() {
     extensions: [item.id]
   }
   await api(port, 'PATCH', `/api/v2/profiles/${encodeURIComponent(uuid)}`, body)
-  const already = (await activeNow()).some((p) => p.uuid === uuid)
-  if (already) {
-    try { await api(port, 'POST', '/api/profiles/stop', { uuid }) } catch (e) {}
-    await sleep(1200)
-  }
   await api(port, 'POST', '/api/profiles/start', { uuid, debug_port: true })
 
   let entry = null
@@ -209,35 +227,78 @@ async function main() {
   }
 
   let pageWs = null
+  let swWs = null
   for (let i = 0; i < 40 && !pageWs; i += 1) {
     await sleep(500)
     try {
       const list = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((r) => r.json())
       const t = (list || []).find((x) => x.type === 'page' && String(x.url || '').includes('/popup.html'))
       if (t) pageWs = t.webSocketDebuggerUrl
+      const sw = (list || []).find((x) => x.type === 'service_worker' && String(x.url || '').includes(item.ext_id))
+      if (sw) swWs = sw.webSocketDebuggerUrl
+      if (pageWs || swWs) break
     } catch (e) {}
   }
 
-  if (pageWs) {
+  const evalWs = pageWs || swWs
+  if (evalWs) {
+    // Runs in either the popup page or the service worker. Feature-detects the
+    // background globals so the SW context works without runtime.sendMessage.
+    // Step 1: apply proxy. Step 2: verify proxy egress IP. Step 3: start.
     const expr = `(async () => {
       const st = await chrome.storage.local.get(null);
-      const proxy = Object.assign({}, st.proxy || {}, { enabled: false });
-      const config = Object.assign({}, st.config || {}, { live: true, autoRun: true });
+      const proxy = Object.assign({}, st.proxy || {}, {
+        enabled: ${JSON.stringify(USE_PROXY)},
+        customUrl: ${JSON.stringify(PROXY_URL)}
+      });
+      const config = Object.assign({}, st.config || {}, {
+        live: true,
+        autoRun: true,
+        emailOrder: st.config && st.config.emailOrder === "asc" ? "asc" : "desc"
+      });
       await chrome.storage.local.set({
         proxy, config, socks5ProxyMigrated: true,
         sheetWebhookUrl: ${JSON.stringify(SHEET)},
         sheetToken: ${JSON.stringify(SHEET_TOKEN)},
         sheetWebhookMigratedV2: true
       });
-      try { await chrome.proxy.settings.set({ value: { mode: "direct" }, scope: "regular" }); } catch (e) {}
-      const r = await chrome.runtime.sendMessage({ type: "ENSURE_LIVE", start: true });
-      return { r, version: chrome.runtime.getManifest().version };
+      const wantProxy = ${JSON.stringify(USE_PROXY)};
+      const hasBg = typeof applyProxy === "function" && typeof ensureLive === "function";
+      if (wantProxy) {
+        if (hasBg) { await applyProxy(); }
+        else { await chrome.runtime.sendMessage({ type: "SET_PROXY" }); }
+      } else {
+        try { await chrome.proxy.settings.set({ value: { mode: "direct" }, scope: "regular" }); } catch (e) {}
+      }
+      let proxyIp = "";
+      let verified = !wantProxy;
+      if (wantProxy) {
+        for (let i = 0; i < 15; i++) {
+          try {
+            let info;
+            if (typeof fetchProxyInfo === "function") { info = await fetchProxyInfo(); }
+            else { info = await chrome.runtime.sendMessage({ type: "PROXY_INFO" }); }
+            if (info && info.ip) { proxyIp = String(info.ip); verified = true; break; }
+          } catch (e) {}
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      if (!verified) {
+        return { proxyVerified: false, proxyIp, started: false, via: hasBg ? "sw" : "popup", version: chrome.runtime.getManifest().version, proxyEnabled: wantProxy };
+      }
+      let r;
+      if (hasBg) { r = await ensureLive(true); }
+      else { r = await chrome.runtime.sendMessage({ type: "ENSURE_LIVE", start: true }); }
+      return { proxyVerified: true, proxyIp, started: !!r, r, via: hasBg ? "sw" : "popup", version: chrome.runtime.getManifest().version, proxyEnabled: wantProxy };
     })()`
-    const value = await cdpEval(pageWs, expr)
+    const value = await cdpEval(evalWs, expr, 60000)
     console.log(`extension configured: ${JSON.stringify(value)}`)
+    if (!value || value.proxyVerified === false) {
+      throw new Error('proxy check failed: no egress IP from the configured proxy; login not started')
+    }
     if (targetId && browserWs) cdpCall(browserWs, 'Target.closeTarget', { targetId }).catch(() => {})
   } else {
-    console.log('warning: extension popup page not found; open the extension popup and press Start.')
+    console.log('warning: extension popup page and service worker not found; open the extension popup and press Start.')
   }
 
   console.log(JSON.stringify({
@@ -249,5 +310,6 @@ async function main() {
 
 main().catch((e) => {
   console.error(`[login-setup] ${e.message}`)
+  if (e && e.stack) console.error(e.stack)
   process.exit(1)
 })

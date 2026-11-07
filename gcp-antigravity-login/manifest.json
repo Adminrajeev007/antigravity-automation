@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GCP Antigravity Login",
-  "version": "2.9.23",
+  "version": "2.9.39",
   "description": "Logs in to existing Google accounts, opens Antigravity OAuth, selects the logged-in account, and submits the captured code.",
   "permissions": [
     "storage",

@@ -94,7 +94,8 @@ const DEFAULTS = {
     autoRun: true,
     fastMode: false,
     live: true,
-    stuckMinutes: 2.5
+    stuckMinutes: 2.5,
+    emailOrder: "desc"
   },
   proxy: {
     enabled: false,
@@ -245,7 +246,8 @@ chrome.runtime.onInstalled.addListener(async () => {
       live: typeof storedConfig.live === "boolean" ? storedConfig.live : true,
       stuckMinutes: typeof storedConfig.stuckMinutes === "number"
         ? storedConfig.stuckMinutes
-        : DEFAULTS.config.stuckMinutes
+        : DEFAULTS.config.stuckMinutes,
+      emailOrder: storedConfig.emailOrder === "asc" ? "asc" : "desc"
     },
     proxy: { ...DEFAULTS.proxy, ...(stored.proxy || {}) }
   };
@@ -411,12 +413,7 @@ async function applyProxy() {
         port: parsed.port
       },
       bypassList: [
-        "<local>",
-        "agy-agylb-wu9iuq-1cc4ca-38-46-221-168.sslip.io",
-        "dispose.lol",
-        "accounts.google.com",
-        "antigravity.google",
-        "www.antigravity.google"
+        "<local>"
       ]
     }
   };
@@ -434,6 +431,11 @@ async function applyProxy() {
 
 async function setDirectForOauth() {
   try {
+    const stored = await chrome.storage.local.get("proxy");
+    if (stored.proxy && stored.proxy.enabled) {
+      await applyProxy();
+      return;
+    }
     await chrome.proxy.settings.set({ value: { mode: "direct" }, scope: "regular" });
   } catch (e) {}
 }
@@ -642,7 +644,7 @@ async function recoverFromProxyChange(reason) {
       proxyFailAt: 0,
       lastProxyError: null
     });
-    const res = await doPrepareLiveAccount(hold && hold.id);
+    const res = await prepareLiveAccount(hold && hold.id);
     if (!res || !res.ok) {
       await chrome.storage.local.set({
         lastLiveError: (res && res.error) || "Could not restart after proxy change."
@@ -690,7 +692,7 @@ async function checkProxyHealth() {
       });
       const tabs = await chrome.tabs.query({});
       const blank = tabs.find((tab) => !tab.url || tab.url === "about:blank");
-      const res = await doPrepareLiveAccount(blank && blank.id);
+      const res = await prepareLiveAccount(blank && blank.id);
       if (!res || !res.ok) {
         await chrome.storage.local.set({
           lastLiveError: (res && res.error) || "Could not resume after proxy recovery."
@@ -740,6 +742,61 @@ function prepareLiveAccount(preferredTabId) {
   return preparePromise;
 }
 
+let flowOwnerTabId = null;
+
+function sameEmail(a, b) {
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+
+async function currentFlowOwner() {
+  if (flowOwnerTabId) {
+    try {
+      await chrome.tabs.get(flowOwnerTabId);
+      return flowOwnerTabId;
+    } catch (e) { flowOwnerTabId = null; }
+  }
+  try {
+    const session = await chrome.storage.session.get("flowOwnerTabId");
+    if (session.flowOwnerTabId) {
+      await chrome.tabs.get(session.flowOwnerTabId);
+      flowOwnerTabId = session.flowOwnerTabId;
+      return flowOwnerTabId;
+    }
+  } catch (e) { flowOwnerTabId = null; }
+  return null;
+}
+
+async function claimFlowOwner(tabId) {
+  if (!tabId) return null;
+  flowOwnerTabId = tabId;
+  try { await chrome.storage.session.set({ flowOwnerTabId: tabId }); } catch (e) {}
+  await collapseFlowTabs(tabId);
+  return tabId;
+}
+
+async function enforceSingleFlowTab(updatedId, url) {
+  if (!updatedId || flowTransition || preparePromise) return;
+  if (/oauth-callback/i.test(String(url || ""))) {
+    await claimFlowOwner(updatedId);
+    return;
+  }
+  const owner = await currentFlowOwner();
+  if (!owner) {
+    await claimFlowOwner(updatedId);
+    return;
+  }
+  if (updatedId === owner) return;
+  try {
+    const ownerTab = await chrome.tabs.get(owner);
+    const ownerUrl = ownerTab.url || ownerTab.pendingUrl || "";
+    if (isFlowTab(ownerUrl)) {
+      try { await chrome.tabs.remove(updatedId); } catch (e) {}
+      return;
+    }
+  } catch (e) {}
+  await claimFlowOwner(updatedId);
+}
+
 async function ensureFlowAlive() {
   const stored = await chrome.storage.local.get([
     "config", "proxyHold", "proxyRecovering", "proxyRecoveryStartedAt",
@@ -772,7 +829,15 @@ async function ensureFlowAlive() {
 
   let tabs = [];
   try { tabs = await chrome.tabs.query({}); } catch (e) { return; }
-  if (tabs.some((tab) => isFlowTab(tab.url) || isFlowTab(tab.pendingUrl))) return;
+  const flowTabs = tabs.filter((tab) => isFlowTab(tab.url) || isFlowTab(tab.pendingUrl));
+  if (flowTabs.length > 1) {
+    await collapseFlowTabs();
+    return;
+  }
+  if (flowTabs.length === 1) {
+    await trimExtraneousTabs(flowTabs[0].id);
+    return;
+  }
 
   const blanks = tabs.filter((tab) =>
     tab.url === "about:blank" || (!tab.url && !tab.pendingUrl)
@@ -998,32 +1063,34 @@ async function cleanupResidueTabs(preferredTabId) {
   let tabs = [];
   try { tabs = await chrome.tabs.query({}); } catch (e) { return preferredTabId || null; }
 
-  const residue = tabs.filter((tab) => {
-    if (!tab || tab.id === preferredTabId) return false;
-    if (isFlowTab(tab.url) || isFlowTab(tab.pendingUrl)) return true;
-    return tab.url === "about:blank" || (!tab.url && !tab.pendingUrl);
-  });
-
-  let keep = tabs.find((tab) => tab.id === preferredTabId) || null;
-  if (!keep) keep = residue.find((tab) => tab.active) || residue[0] || null;
+  // Keep exactly one tab. Prefer the requested tab, then the active flow tab,
+  // then any flow tab, then the active tab, then the first tab.
+  let keep = tabs.find((tab) => tab.id === preferredTabId) ||
+    tabs.find((tab) => tab.active && isFlowTab(tab.url)) ||
+    tabs.find((tab) => isFlowTab(tab.url) || isFlowTab(tab.pendingUrl)) ||
+    tabs.find((tab) => tab.active) ||
+    tabs[0] || null;
   if (!keep) {
     try { keep = await chrome.tabs.create({ url: "about:blank", active: true }); } catch (e) {}
   }
 
-  for (const tab of residue) {
-    if (keep && tab.id === keep.id) continue;
-    try { await chrome.tabs.remove(tab.id); } catch (e) {}
+  if (keep) {
+    for (const tab of tabs) {
+      if (tab.id === keep.id) continue;
+      try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    }
   }
   return keep && keep.id ? keep.id : null;
 }
 
 // Prepare the next existing email, reset login/OAuth state, and open AddSession.
 async function doPrepareLiveAccount(preferredTabId) {
-  const stored = await chrome.storage.local.get(["config", "apiKey", "interns"]);
+  const stored = await chrome.storage.local.get(["config", "apiKey", "interns", "currentIndex"]);
   const config = stored.config || {};
   if (config.live === false) return { ok: false, error: "Live is stopped." };
 
   preferredTabId = await cleanupResidueTabs(preferredTabId);
+  if (preferredTabId) await claimFlowOwner(preferredTabId);
 
   if (!String(stored.apiKey || "").trim()) {
     await chrome.storage.local.set({ apiKey: DEFAULT_API_KEY });
@@ -1049,13 +1116,30 @@ async function doPrepareLiveAccount(preferredTabId) {
     }
   });
   if (ignoredChanged) await chrome.storage.local.set({ interns });
-  const idx = interns.findIndex((i) => i.status === "pending");
+  // Resume the current email if the flow tab vanished during navigation.
+  // Never pick a different pending email while another is still in progress.
+  const storedCurrentIndex = Number.isInteger(stored.currentIndex) ? stored.currentIndex : 0;
+  const currentIntern = interns[storedCurrentIndex];
+  const resumeCurrent = currentIntern &&
+    (currentIntern.status === "in_progress" || currentIntern.status === "pending");
+  const idx = resumeCurrent
+    ? storedCurrentIndex
+    : interns.findIndex((i) => i.status === "pending");
   if (idx < 0) {
     return { ok: false, error: "Add login emails or reset the list to start again." };
   }
 
   const email = interns[idx].email;
   interns[idx] = { ...interns[idx], status: "in_progress", note: "Logging in" };
+  for (let i = 0; i < interns.length; i++) {
+    if (i !== idx && interns[i].status === "in_progress") {
+      interns[i] = {
+        ...interns[i],
+        status: "pending",
+        note: "Reset stale parallel flow"
+      };
+    }
+  }
   const accountStartedAt = Date.now();
 
   await chrome.storage.local.set({
@@ -1114,6 +1198,7 @@ async function openLoginTab(preferredTabId) {
   if (preferredTabId) {
     try {
       await chrome.tabs.update(preferredTabId, { url: LOGIN_URL, active: true });
+      await claimFlowOwner(preferredTabId);
       return { id: preferredTabId };
     } catch (e) {}
   }
@@ -1125,6 +1210,7 @@ async function openLoginTab(preferredTabId) {
     if (existing && existing.id) {
       try {
         await chrome.tabs.update(existing.id, { url: LOGIN_URL, active: true });
+        await claimFlowOwner(existing.id);
         tab = existing;
       } catch (e) {}
     }
@@ -1133,7 +1219,30 @@ async function openLoginTab(preferredTabId) {
   if (!tab) {
     try { tab = await chrome.tabs.create({ url: LOGIN_URL, active: true }); } catch (e) {}
   }
+  if (tab && tab.id) await claimFlowOwner(tab.id);
   return tab;
+}
+
+function isExtraneousTab(url) {
+  const u = String(url || "");
+  if (!u || u === "about:blank") return true;
+  if (u.startsWith("chrome://newtab")) return true;
+  if (u.startsWith("chrome://new-tab-page")) return true;
+  if (/^chrome-extension:\/\/[a-p]{32}\/popup\.html/.test(u)) return true;
+  return false;
+}
+
+// Close leftover blank/new-tab/popup tabs so the login browser stays at one tab.
+async function trimExtraneousTabs(keepId) {
+  if (flowTransition || preparePromise) return;
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch (e) { return; }
+  if (tabs.length <= 1) return;
+  for (const tab of tabs) {
+    if (tab.id === keepId) continue;
+    if (!isExtraneousTab(tab.url || tab.pendingUrl || "")) continue;
+    try { await chrome.tabs.remove(tab.id); } catch (e) {}
+  }
 }
 
 async function closeAllExcept(tabId) {
@@ -1144,6 +1253,21 @@ async function closeAllExcept(tabId) {
       if (tab.id !== tabId) {
         try { await chrome.tabs.remove(tab.id); } catch (e) {}
       }
+    }
+  } catch (e) {}
+}
+
+async function collapseFlowTabs(keepId) {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const flow = tabs.filter((tab) => isFlowTab(tab.url) || isFlowTab(tab.pendingUrl));
+    if (flow.length <= 1) return;
+    const keep = (keepId && flow.find((tab) => tab.id === keepId)) ||
+      flow.find((tab) => tab.active) ||
+      flow[flow.length - 1];
+    for (const tab of flow) {
+      if (keep && tab.id === keep.id) continue;
+      try { await chrome.tabs.remove(tab.id); } catch (e) {}
     }
   } catch (e) {}
 }
@@ -1202,10 +1326,10 @@ async function prepareInFreshTab() {
         }
       }
     } catch (e) {}
-    return await doPrepareLiveAccount(newTab.id);
+    return await prepareLiveAccount(newTab.id);
   }
 
-  return await doPrepareLiveAccount();
+  return await prepareLiveAccount();
 }
 
 async function restartLiveFlow() {
@@ -1281,7 +1405,10 @@ function isFlowTab(url) {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!changeInfo.url && changeInfo.status !== "complete") return;
   const url = (tab && tab.url) || changeInfo.url || "";
-  if (isFlowTab(url)) noteActivity("tab").catch(() => {});
+  if (isFlowTab(url)) {
+    noteActivity("tab").catch(() => {});
+    enforceSingleFlowTab(tabId, url).catch(() => {});
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -1325,6 +1452,9 @@ async function ensureLive(start) {
       try {
         await chrome.tabs.update(existing.id, { active: true });
         await markAutoStartHandled();
+        if (start === true) {
+          setTimeout(() => { trimExtraneousTabs(existing.id).catch(() => {}); }, 1500);
+        }
         return { ok: true, focused: true };
       } catch (e) {}
     }
@@ -1425,10 +1555,14 @@ async function openOauthUrl(url, tabId) {
   if (tabId) {
     try {
       await chrome.tabs.update(tabId, { url, active: true });
-      return;
+      await claimFlowOwner(tabId);
+      return tabId;
     } catch (e) {}
   }
-  chrome.tabs.create({ url });
+  let created = null;
+  try { created = await chrome.tabs.create({ url, active: true }); } catch (e) {}
+  if (created && created.id) await claimFlowOwner(created.id);
+  return created && created.id;
 }
 
 async function doStartOauth(email, tabId) {
@@ -1560,7 +1694,7 @@ async function sheetAction(params) {
         if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
       });
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15000);
+      const timer = setTimeout(() => controller.abort(), 120000);
       try {
         const res = await fetch(url.toString(), { cache: "no-store", signal: controller.signal });
         const data = await parseResponse(res);
@@ -1574,7 +1708,7 @@ async function sheetAction(params) {
   // Fallback: POST action to the same webhook.
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
+    const timer = setTimeout(() => controller.abort(), 120000);
     try {
       const body = { key: token, ...params };
       const res = await fetch(base, {
@@ -1612,6 +1746,8 @@ function isIgnoredTestEmail(email) {
   if (!value.includes("@")) return true;
   if (ignoredEmailSet.has(value)) return true;
   const local = value.split("@")[0];
+  if (/@example\.(com|org|net)$/i.test(value)) return true;
+  if (/^billing-delete[-_.]/i.test(local)) return true;
   return /^(verify|passed[-_]?check|test|example|noreply|no[-_]?reply)([-_.].*)?$/.test(local) ||
     value === "test@example.com";
 }
@@ -1632,7 +1768,8 @@ async function addPendingSheetEmail(email) {
       note: "Retry rejected email from Google Sheet",
       loginAttempts: 0
     };
-    await chrome.storage.local.set({ interns, currentIndex: existingIdx });
+    // Never move the active email just because a rejected row was re-queued.
+    await chrome.storage.local.set({ interns });
     return true;
   }
   interns.push({
@@ -1641,7 +1778,11 @@ async function addPendingSheetEmail(email) {
     status: "pending",
     note: "From Google Sheet"
   });
-  await chrome.storage.local.set({ interns, currentIndex: stored.currentIndex || 0 });
+  const current = Number(stored.currentIndex);
+  const safeCurrent = Number.isInteger(current) && current >= 0 && current < interns.length
+    ? current
+    : 0;
+  await chrome.storage.local.set({ interns, currentIndex: safeCurrent });
   return true;
 }
 
@@ -1684,12 +1825,19 @@ async function syncSheetEmailsUnlocked() {
 
     // Keep the local list in sync with the Sheet. A previously-pending email
     // that is now completed/rejected must never be picked again.
-    const localInterns = Array.isArray(stored.interns) ? stored.interns : [];
+    const latest = await chrome.storage.local.get(['interns', 'currentIndex']);
+    const localInterns = Array.isArray(latest.interns) ? latest.interns.slice() : [];
+    const activeIndex = Number(latest.currentIndex) || 0;
     let statusChanged = false;
-    for (const item of localInterns) {
+    for (let i = 0; i < localInterns.length; i++) {
+      const item = localInterns[i];
       const key = String(item.email || '').trim().toLowerCase();
       const match = byEmail.get(key);
       if (!match) continue;
+      // The active email is owned by the login flow. The Sheet may still show
+      // an old rejected/done value for it, which must not interrupt the login.
+      if (item.status === 'done' || item.status === 'in_progress') continue;
+      if (i === activeIndex && item.status === 'pending') continue;
       const row = match.row || {};
       const rowStatus = String(row.status || '').toLowerCase();
       if (row.successful || rowStatus === 'completed' || rowStatus === 'successful') {
@@ -1706,8 +1854,6 @@ async function syncSheetEmailsUnlocked() {
         }
       }
     }
-    if (statusChanged) await chrome.storage.local.set({ interns: localInterns });
-
     const candidates = [...byEmail.values()].filter(({ row }) => {
       const status = String(row.status || "").toLowerCase();
       const notes = String(row.notes || "").toLowerCase();
@@ -1719,15 +1865,63 @@ async function syncSheetEmailsUnlocked() {
       return true;
     });
 
+    const order = String(config.emailOrder || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+    const rowTime = (row) => {
+      const value = row.created || row.lastOperation || row.successful || row.rejected || "";
+      const time = Date.parse(String(value));
+      return Number.isFinite(time) ? time : 0;
+    };
+    candidates.sort((a, b) => {
+      const at = rowTime(a.row);
+      const bt = rowTime(b.row);
+      return order === "asc" ? at - bt : bt - at;
+    });
+
+    const queuedKeys = new Set(localInterns.map((item) => String(item.email || '').trim().toLowerCase()));
     let added = 0;
     let alreadyLocal = 0;
-    for (const item of candidates) {
-      if (!(await addPendingSheetEmail(item.email))) {
+    for (const candidate of candidates) {
+      const key = String(candidate.email || '').trim().toLowerCase();
+      if (!key || queuedKeys.has(key)) {
         alreadyLocal++;
         continue;
       }
+      queuedKeys.add(key);
+      const existingIdx = localInterns.findIndex((item) => String(item.email || '').trim().toLowerCase() === key);
+      if (existingIdx >= 0) {
+        const status = localInterns[existingIdx].status;
+        if (status === 'done' || status === 'pending' || status === 'in_progress') {
+          alreadyLocal++;
+          continue;
+        }
+        localInterns[existingIdx] = {
+          ...localInterns[existingIdx],
+          status: 'pending',
+          note: 'Retry rejected email from Google Sheet',
+          loginAttempts: 0
+        };
+      } else {
+        localInterns.push({
+          name: key.split('@')[0],
+          email: candidate.email,
+          status: 'pending',
+          note: 'From Google Sheet'
+        });
+      }
       added++;
+      statusChanged = true;
     }
+
+    if (statusChanged) {
+      const current = Number(latest.currentIndex);
+      const safeCurrent = Number.isInteger(current) && current >= 0 && current < localInterns.length
+        ? current
+        : 0;
+      // One merge only: never overwrite a login that completed during the
+      // Sheet request with a stale pre-request snapshot.
+      await chrome.storage.local.set({ interns: localInterns, currentIndex: safeCurrent });
+    }
+
     await chrome.storage.local.set({
       sheetSyncStatus: added > 0
         ? "Imported " + added + " email(s) from the sheet."
@@ -1736,7 +1930,11 @@ async function syncSheetEmailsUnlocked() {
           : "Sheet sync: no pending emails."
     });
     if (added > 0) {
-      try { await ensureLive(true); } catch (e) {}
+      const after = await chrome.storage.local.get(['interns', 'currentIndex']);
+      const current = (after.interns || [])[Number(after.currentIndex) || 0];
+      if (!current || current.status === 'done' || current.status === 'failed') {
+        try { await ensureLive(true); } catch (e) {}
+      }
     }
 }
 
@@ -1825,7 +2023,7 @@ async function recordSuccessEmail(email) {
 async function setInternStatusByEmail(email, status, note) {
   const { interns } = await chrome.storage.local.get("interns");
   if (!Array.isArray(interns)) return;
-  const idx = interns.findIndex((i) => i.email === email);
+  const idx = interns.findIndex((i) => sameEmail(i.email, email));
   if (idx < 0) return;
   interns[idx] = { ...interns[idx], status, note };
   await chrome.storage.local.set({ interns });
@@ -1867,14 +2065,14 @@ async function doResetAndRestart() {
 
   await clearAccountTimeout();
 
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
   const again = await chrome.storage.local.get("config");
   if (again.config && again.config.live === false) return;
 
   // 1) Logout first using the extension's sign-out page.
   try { await chrome.tabs.create({ url: LOGOUT_URL, active: true }); } catch (e) {}
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await new Promise((resolve) => setTimeout(resolve, 800));
 
   // 2) Remove all browser data / cookies.
   await clearAllBrowserData();
@@ -1896,7 +2094,7 @@ async function doResetAndRestart() {
   if (newTab && newTab.id) await closeAllExcept(newTab.id);
 
   // 5) Log in to the next pending email in the new tab.
-  await doPrepareLiveAccount(newTab && newTab.id);
+  await prepareLiveAccount(newTab && newTab.id);
 
   // Keep exactly one tab open.
   let keepId = newTab && newTab.id;
@@ -2086,7 +2284,9 @@ async function doSubmitOauthCode(code, email) {
     await recordSuccessEmail(stored.oauthStartEmail);
     await setInternStatusByEmail(stored.oauthStartEmail, "done", "Login + API completed");
     await updateOauthCodeResult(code, "accepted");
-    await markLoginComplete(stored.oauthStartEmail, token);
+    // The Sheet can take ~30s per write. Do not hold the login flow for it:
+    // mark completion in the background and start the next email immediately.
+    markLoginComplete(stored.oauthStartEmail, token).catch(() => {});
     resetAndRestart().catch(() => {});
     return { ok: true, email: stored.oauthStartEmail };
   }
@@ -2125,6 +2325,15 @@ async function doSubmitOauthCode(code, email) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === "AM_I_FLOW_OWNER") {
+    (async () => {
+      const tabId = sender.tab && sender.tab.id;
+      let owner = await currentFlowOwner();
+      if (!owner && tabId && isFlowTab(sender.tab.url)) owner = await claimFlowOwner(tabId);
+      sendResponse({ owner: !!tabId && tabId === owner });
+    })().catch(() => sendResponse({ owner: false }));
+    return true;
+  }
   if (msg && msg.type === "GET_RANDOM_DOMAIN") {
     sendResponse({ ok: true, domain: randomDomain() });
     return true;
@@ -2154,11 +2363,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     ensureLive(msg.start).then((res) => sendResponse(res)).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
+  if (msg && msg.type === "SYNC_SHEET") {
+    syncSheetEmails().then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
   if (msg && msg.type === "LOGIN_BLOCKED") {
     (async () => {
       const stored = await chrome.storage.local.get(["interns", "currentIndex"]);
       const interns = Array.isArray(stored.interns) ? stored.interns : [];
-      const idx = interns.findIndex((i) => i.email === msg.email);
+      const idx = interns.findIndex((i) => sameEmail(i.email, msg.email));
       if (idx < 0) {
         sendResponse({ ok: false, error: "email not found" });
         return;
@@ -2222,7 +2435,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const stored = await chrome.storage.local.get(["interns", "currentIndex"]);
       const interns = Array.isArray(stored.interns) ? stored.interns : [];
-      const idx = interns.findIndex((i) => i.email === msg.email);
+      const idx = interns.findIndex((i) => sameEmail(i.email, msg.email));
       if (idx >= 0) {
         interns[idx] = { ...interns[idx], status: "failed", note: msg.reason || "failed" };
         await markSheetRejected(msg.email, msg.reason || "login failed");
@@ -2439,4 +2652,3 @@ setInterval(() => { ensureFlowAlive().catch(() => {}); }, 20000);
 setInterval(() => { doctorCheck().catch(() => {}); }, 15000);
 setTimeout(() => { ensureFlowAlive().catch(() => {}); }, 3000);
 setTimeout(() => { syncSheetEmails().catch(() => {}); }, 5000);
-setInterval(() => { syncSheetEmails().catch(() => {}); }, 30000);
