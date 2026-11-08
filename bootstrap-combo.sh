@@ -91,6 +91,11 @@ fi
 
 chmod +x start-combo.sh start-combo-3.sh start-2signup.sh run-with-logs.sh 2>/dev/null || true
 
+export ANTIG_LOG_ROOT="${ANTIG_LOG_ROOT:-$HOME/antig-logs}"
+export EMAIL_HISTORY_FILE="${EMAIL_HISTORY_FILE:-$ANTIG_LOG_ROOT/email-history.txt}"
+export SHEET_QUEUE_FILE="${SHEET_QUEUE_FILE:-$ANTIG_LOG_ROOT/sheet-queue.jsonl}"
+mkdir -p "$ANTIG_LOG_ROOT"
+
 echo "== starting combo: ${ORCH_BATCH:-3} profiles/batch =="
 ORCH_BATCH="${ORCH_BATCH:-3}" \
 ORCH_MAX_RUNS="${ORCH_MAX_RUNS:-0}" \

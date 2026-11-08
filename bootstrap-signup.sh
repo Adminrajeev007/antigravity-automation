@@ -89,6 +89,11 @@ if ! curl -s -m 4 "http://127.0.0.1:$OCTO_PORT/api/username" >/dev/null 2>&1 && 
   exit 1
 fi
 
+export ANTIG_LOG_ROOT="${ANTIG_LOG_ROOT:-$HOME/antig-logs}"
+export EMAIL_HISTORY_FILE="${EMAIL_HISTORY_FILE:-$ANTIG_LOG_ROOT/email-history.txt}"
+export SHEET_QUEUE_FILE="${SHEET_QUEUE_FILE:-$ANTIG_LOG_ROOT/sheet-queue.jsonl}"
+mkdir -p "$ANTIG_LOG_ROOT"
+
 SIGNUP_ZIP="$PWD/antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.7.zip"
 if [ ! -f "$SIGNUP_ZIP" ]; then
   echo "ERROR: signup extension zip not found: $SIGNUP_ZIP"
