@@ -10,7 +10,11 @@ import sys
 import time
 import urllib.request
 
-ROOT = os.path.expanduser('~/Desktop/antig-logs')
+CANDIDATE_ROOTS = [os.path.expanduser(p) for p in [
+    os.environ.get('ANTIG_LOG_ROOT', ''),
+    '~/Desktop/antig-logs',
+    '~/antig-logs',
+] if p]
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OCTO = 'http://127.0.0.1:58888'
 
@@ -89,11 +93,24 @@ def terminal_width():
 
 
 def latest_run():
-    try:
-        dirs = [os.path.join(ROOT, d) for d in os.listdir(ROOT) if re.match(r'run-', d)]
-        return max(dirs, key=os.path.getmtime) if dirs else ''
-    except OSError:
-        return ''
+    best = ''
+    best_m = 0
+    for root in CANDIDATE_ROOTS:
+        try:
+            for name in os.listdir(root):
+                if not re.match(r'run-', name):
+                    continue
+                candidate = os.path.join(root, name)
+                try:
+                    m = os.path.getmtime(candidate)
+                except OSError:
+                    continue
+                if m > best_m:
+                    best_m = m
+                    best = candidate
+        except OSError:
+            pass
+    return best
 
 
 def reset_run():
