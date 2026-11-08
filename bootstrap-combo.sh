@@ -83,7 +83,7 @@ if [ -f "$HOME/.Octo Browser/local_port" ]; then
   OCTO_PORT="$(cat "$HOME/.Octo Browser/local_port" 2>/dev/null || true)"
 fi
 OCTO_PORT="${OCTO_PORT:-58888}"
-if ! curl -s -m 4 "http://127.0.0.1:$OCTO_PORT/api/profiles/active" >/dev/null 2>&1; then
+if ! curl -s -m 4 "http://127.0.0.1:$OCTO_PORT/api/username" >/dev/null 2>&1 && ! curl -s -m 4 "http://127.0.0.1:$OCTO_PORT/api/profiles/active" >/dev/null 2>&1; then
   echo "ERROR: Octo Browser API is not reachable on 127.0.0.1:$OCTO_PORT"
   echo "Install Octo Browser, open it, and log in before running this."
   exit 1
