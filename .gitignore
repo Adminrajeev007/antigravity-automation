@@ -29,9 +29,11 @@ antig-orchestrator-mac/gcp-antigravity-login-v2.9.*.zip
 gcp-auto-intern-portal-v1.5.*.zip
 !gcp-auto-intern-portal-v1.5.0.zip
 !gcp-auto-intern-portal-v1.5.4.zip
+!gcp-auto-intern-portal-v1.5.7.zip
 antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.*.zip
 !antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.0.zip
 !antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.4.zip
+!antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.7.zip
 
 
 proxy.local.json
