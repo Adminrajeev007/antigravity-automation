@@ -65,6 +65,7 @@ if [ ! -x "$NODE_BIN" ]; then
     fi
     tar -xzf "$TMPDIR_NODE/node.tar.gz" -C "$TMPDIR_NODE"
     rm -rf "antig-orchestrator-mac/runtime/node"
+    mkdir -p "antig-orchestrator-mac/runtime"
     mv "$TMPDIR_NODE/node-$NODE_VER-darwin-$NODE_ARCH" "antig-orchestrator-mac/runtime/node"
     rm -rf "$TMPDIR_NODE"
     echo "== Node installed: $($NODE_BIN --version) =="
