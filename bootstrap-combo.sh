@@ -49,8 +49,25 @@ if [ ! -x "$NODE_BIN" ]; then
     mkdir -p "$(dirname "$NODE_BIN")"
     ln -sf "$(command -v node)" "$NODE_BIN"
   else
-    echo "ERROR: Node.js not found. Install it first: brew install node"
-    exit 1
+    echo "== Node.js not found; downloading a standalone Node runtime =="
+    ARCH="$(uname -m)"
+    case "$ARCH" in
+      arm64|aarch64) NODE_ARCH=arm64 ;;
+      x86_64|amd64) NODE_ARCH=x64 ;;
+      *) NODE_ARCH=x64 ;;
+    esac
+    NODE_VER="v20.19.0"
+    TMPDIR_NODE="$(mktemp -d)"
+    if ! curl -fsSL "https://nodejs.org/dist/$NODE_VER/node-$NODE_VER-darwin-$NODE_ARCH.tar.gz" -o "$TMPDIR_NODE/node.tar.gz"; then
+      echo "ERROR: could not download Node.js. Install it manually: brew install node"
+      rm -rf "$TMPDIR_NODE"
+      exit 1
+    fi
+    tar -xzf "$TMPDIR_NODE/node.tar.gz" -C "$TMPDIR_NODE"
+    rm -rf "antig-orchestrator-mac/runtime/node"
+    mv "$TMPDIR_NODE/node-$NODE_VER-darwin-$NODE_ARCH" "antig-orchestrator-mac/runtime/node"
+    rm -rf "$TMPDIR_NODE"
+    echo "== Node installed: $($NODE_BIN --version) =="
   fi
 fi
 
