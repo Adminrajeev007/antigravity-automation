@@ -89,6 +89,7 @@ const PROXY_MODE = Boolean(PROXY_URL)
 const PROXY_PORT = process.env.ORCH_PROXY_PORT || (String(PROXY_URL).match(/:(\d+)/) || [])[1] || '1080'
 const ROTATE_USB = process.env.ORCH_ROTATE_USB === '1'
 const COMBO = process.env.ORCH_COMBO === '1'
+const COMBO_TIMEOUT_MS = Number(process.env.ORCH_COMBO_TIMEOUT_MS || 0)
 const ROTATE_IP = process.env.ORCH_ROTATE_IP === '0'
   ? false
   : (process.env.ORCH_ROTATE_IP === '1' || ROTATE_USB || PROXY_MODE)
@@ -468,6 +469,12 @@ async function createProfile(name, extId) {
 
   const detail = (await octo('GET', `/api/v2/profiles/${uuid}`)).data
   const launchArgs = Array.isArray(detail.launch_args) ? detail.launch_args.slice() : []
+  if (COMBO) {
+    const bypass = '--proxy-bypass-list=localhost;127.0.0.1;192.168.31.250;*agy-agylb*;*dispose.lol*;*script.google.com*;*script.googleusercontent.com*'
+    const i = launchArgs.findIndex((a) => String(a).indexOf('--proxy-bypass-list=') === 0)
+    if (i >= 0) launchArgs[i] = bypass
+    else launchArgs.push(bypass)
+  }
   const proxy = PROXY_MODE ? profileProxy() : (detail.proxy || { type: 'direct' })
   const body = {
     name,
@@ -745,6 +752,38 @@ async function postBillingEmail(email) {
   return text
 }
 
+async function postSheetComplete(email, token) {
+  if (!email) return false
+  const url = new URL(SHEET_WEBAPP_URL)
+  url.searchParams.set('token', SHEET_TOKEN)
+  url.searchParams.set('action', 'complete')
+  url.searchParams.set('tab', 'QR')
+  url.searchParams.set('email', email)
+  url.searchParams.set('notes', 'completed')
+  if (token) url.searchParams.set('userToken', String(token))
+  const deadline = Date.now() + 2500
+  let last = ''
+  while (Date.now() < deadline) {
+    const left = deadline - Date.now()
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(Math.max(500, Math.min(1200, left))) })
+      const text = (await res.text()).replace(/\s+/g, ' ').trim()
+      let data = null
+      try { data = JSON.parse(text) } catch {}
+      if (res.ok && (!data || data.ok !== false)) {
+        log(`sheet complete ${email}: ${text.slice(0, 200)}`)
+        return true
+      }
+      last = (data && (data.error || data.message)) || `HTTP ${res.status}: ${text.slice(0, 120)}`
+    } catch (e) {
+      last = e.message
+    }
+    await sleep(250)
+  }
+  log(`sheet complete failed for ${email}: ${last || 'timeout'}`)
+  return false
+}
+
 function queueBillingEmail(email) {
   if (billingSheetQueued.has(email)) return
   try {
@@ -762,6 +801,24 @@ function queueBillingEmail(email) {
   }
 }
 
+function queueSheetComplete(email, token) {
+  if (!email) return
+  try {
+    fs.mkdirSync(path.dirname(SHEET_QUEUE_FILE), { recursive: true })
+    let lines = []
+    try { lines = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').split('\n').filter(Boolean) } catch {}
+    lines = lines.filter((line) => {
+      try { const e = JSON.parse(line); return !(e.email === email && e.action === 'complete') } catch { return true }
+    })
+    lines.push(JSON.stringify({ email, action: 'complete', token: String(token || ''), at: Date.now() }))
+    fs.writeFileSync(SHEET_QUEUE_FILE, lines.join('\n') + '\n')
+    billingSheetQueued.delete(email)
+    log(`sheet complete queued for backend: ${email}`)
+  } catch (e) {
+    log(`sheet complete queue write failed for ${email}: ${e.message}`)
+  }
+}
+
 async function flushSheetQueue() {
   if (sheetFlushBusy || !fs.existsSync(SHEET_QUEUE_FILE)) return
   sheetFlushBusy = true
@@ -771,24 +828,36 @@ async function flushSheetQueue() {
     const byEmail = new Map()
     for (const line of lines) {
       try {
-        const email = JSON.parse(line).email
-        if (email) byEmail.set(email, line)
+        const e = JSON.parse(line)
+        if (!e.email) continue
+        if (!byEmail.has(e.email)) byEmail.set(e.email, [])
+        byEmail.get(e.email).push(e)
       } catch {}
     }
-    const pending = []
+    const keep = []
     let saved = 0
-    for (const [email, line] of byEmail) {
+    for (const [email, entries] of byEmail) {
       try {
         await postBillingEmail(email)
         billingSheetQueued.delete(email)
-        saved += 1
-        log(`billing sheet retry ok ${email}`)
+        let completeOk = true
+        for (const e of entries) {
+          if (e.action !== 'complete') continue
+          const ok = await postSheetComplete(email, e.token)
+          if (!ok) completeOk = false
+        }
+        if (completeOk) {
+          saved += 1
+          log(`sheet queue flushed ${email} (billing + complete)`)
+        } else {
+          keep.push(...entries)
+        }
       } catch (e) {
-        pending.push(line)
+        keep.push(...entries)
       }
     }
-    try { fs.writeFileSync(SHEET_QUEUE_FILE, pending.length ? pending.join('\n') + '\n' : '') } catch {}
-    if (saved) log(`billing sheet queue flushed ${saved}`)
+    try { fs.writeFileSync(SHEET_QUEUE_FILE, keep.length ? keep.map((e) => JSON.stringify(e)).join('\n') + '\n' : '') } catch {}
+    if (saved) log(`sheet queue flushed ${saved} email(s)`)
   } finally {
     sheetFlushBusy = false
   }
@@ -862,7 +931,7 @@ async function checkSignupError(sess) {
           log(`billing reached for ${sess.email}; waiting for combo OAuth`)
           await saveBillingToSheet(sess.email)
         }
-        if (sess.comboBillingAt && Date.now() - sess.comboBillingAt > 300000) {
+        if (COMBO_TIMEOUT_MS > 0 && sess.comboBillingAt && Date.now() - sess.comboBillingAt > COMBO_TIMEOUT_MS) {
           log(`combo OAuth timeout for ${sess.email}; deleting profile`)
           await deleteSession(sess, 'combo-oauth-timeout', 0)
         }
@@ -885,12 +954,16 @@ async function checkSignupError(sess) {
         title.includes('signin-error')
     })
     if (bad) {
+      if (COMBO) {
+        log(`signup error page detected for ${sess.email}; combo mode keeps the profile open`)
+        return
+      }
       log(`signup error page detected for ${sess.email}, deleting profile`)
       await deleteSession(sess, 'signup-error', 0)
       return
     }
 
-    if (COMBO && sess.comboBillingLogged) return
+    if (COMBO) return
 
     const page = (list || []).find((t) => t.type === 'page' && /^https?:/i.test(String(t.url || '')))
     if (page && page.webSocketDebuggerUrl) {
@@ -948,12 +1021,12 @@ async function startSession(email) {
 }
 
 async function waitSession(sess) {
-  const timer = setTimeout(() => {
+  const timer = COMBO ? null : setTimeout(() => {
     log(`session timeout after ${Math.round(SESSION_TIMEOUT_MS / 1000)}s for ${sess.email}`)
     deleteSession(sess, 'timeout', 0).catch(() => {})
   }, SESSION_TIMEOUT_MS)
   const reason = await sess.done.promise
-  clearTimeout(timer)
+  if (timer) clearTimeout(timer)
   clearInterval(sess.poller)
   sessions.delete(sess.uuid)
   log(`session ended (${reason}) for ${sess.email}`)
@@ -1228,6 +1301,17 @@ const server = http.createServer(async (req, res) => {
     send(res, 200, { ok: true })
     return
   }
+  if (req.method === 'POST' && req.url.startsWith('/combo-step')) {
+    const body = await readBody(req)
+    const email = String(body.email || '').toLowerCase()
+    const step = String(body.step || '')
+    const status = String(body.status || '')
+    const attempt = Number(body.attempt || 1)
+    const error = String(body.error || '')
+    if (step) log(`[step] ${email} ${step} ${status} attempt=${attempt}${error ? ' error=' + error : ''}`)
+    send(res, 200, { ok: true })
+    return
+  }
   if (req.method === 'POST' && req.url.startsWith('/combo-complete')) {
     const body = await readBody(req)
     const email = String(body.email || '').toLowerCase()
@@ -1237,6 +1321,7 @@ const server = http.createServer(async (req, res) => {
       sess = [...sessions.values()].find((s) => String(s.email || '').toLowerCase() === email) || null
     }
     log(`combo complete for ${email || uuid || 'unknown'}`)
+    if (email) queueSheetComplete(email, String(body.token || ''))
     if (sess) await deleteSession(sess, 'combo-complete', 0)
     send(res, 200, { ok: true })
     return
@@ -1291,7 +1376,7 @@ async function main() {
 
   await uploadExtension()
   flushSheetQueue().catch(() => {})
-  try { setInterval(() => flushSheetQueue().catch(() => {}), 60000).unref() } catch {}
+  try { setInterval(() => flushSheetQueue().catch(() => {}), 15000).unref() } catch {}
   if (process.env.ORCH_RESET_PROFILES === '1') {
     try {
       await deleteAllProfiles()
@@ -1320,8 +1405,14 @@ async function main() {
       const before = PROXY_MODE
         ? (await proxyEgress())
         : (ROTATE_USB ? (await proxyEgress()) : (await hostNetwork()).egressIp)
-      const cycled = await cycleIp(before)
-      log(`IP ${cycled.before} -> ${cycled.after} (${PROXY_MODE ? 'proxy' : 'USB tether'})`)
+      let cycled
+      if (batch === 1 && process.env.ORCH_SKIP_FIRST_ROTATE !== '0') {
+        cycled = { before, after: before, network: null }
+        log(`batch 1: using current proxy IP ${before || 'unknown'} (rotation starts after this batch)`)
+      } else {
+        cycled = await cycleIp(before)
+        log(`IP ${cycled.before} -> ${cycled.after} (${PROXY_MODE ? 'proxy' : 'USB tether'})`)
+      }
 
       const emails = generateBatchEmails(BATCH_SIZE)
       log(`batch emails: ${emails.join(', ')}`)
@@ -1364,6 +1455,20 @@ async function main() {
   }
 
   log('finished')
+  try {
+    const deadline = Date.now() + 15 * 60 * 1000
+    while (Date.now() < deadline && fs.existsSync(SHEET_QUEUE_FILE)) {
+      let left = ''
+      try { left = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').trim() } catch {}
+      if (!left) { log('backend sheet queue empty'); break }
+      await flushSheetQueue().catch(() => {})
+      try { left = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').trim() } catch {}
+      if (!left) { log('backend sheet queue empty'); break }
+      const n = left.split('\n').filter(Boolean).length
+      log(`backend sheet queue pending (${n}); retrying in 15s`)
+      await sleep(15000)
+    }
+  } catch {}
   server.close()
   process.exit(0)
 }

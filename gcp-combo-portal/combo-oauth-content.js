@@ -133,6 +133,15 @@
 
   function clickConsent() {
     var href = String(location.href || "").toLowerCase();
+    var spans = Array.prototype.slice.call(document.querySelectorAll('span[jsname="V67aGc"], span.VfPpkd-vQzf8d'));
+    for (var si = 0; si < spans.length; si += 1) {
+      var sp = spans[si];
+      if (!visible(sp)) continue;
+      if (!/i understand/i.test(String(sp.textContent || "").trim())) continue;
+      var bsp = sp.closest("button") || sp;
+      if (click(bsp)) reportDone("terms_accepted");
+      return true;
+    }
     var approve = document.getElementById("submit_approve_access");
     if (approve && visible(approve)) {
       var step = href.indexOf("speedbump") >= 0 ? "terms_accepted" : "consent_approved";

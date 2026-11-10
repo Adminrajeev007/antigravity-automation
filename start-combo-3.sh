@@ -22,7 +22,7 @@ ORCH_MAX_RUNS="${ORCH_MAX_RUNS:-0}" \
 ORCH_RESET_PROFILES="${ORCH_RESET_PROFILES:-1}" \
 ORCH_ROTATE_IP=1 \
 ORCH_COMBO=1 \
-EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.4.zip" \
+EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.19.zip" \
   "$DIR/run-with-logs.sh"
 
 echo

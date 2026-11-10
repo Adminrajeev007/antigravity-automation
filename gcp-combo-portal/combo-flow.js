@@ -101,6 +101,7 @@ async function comboFlowAdvance(key) {
   const idx = comboStepIndex(key);
   if (idx < 0) return;
   const now = Date.now();
+  const changed = [];
   COMBO_STEPS.forEach(function (s, i) {
     const st = flow.steps[s[0]];
     if (!st) return;
@@ -109,18 +110,24 @@ async function comboFlowAdvance(key) {
       st.at = st.at || now;
       st.ms = st.at ? now - st.at : 0;
       st.error = "";
+      changed.push(s[0]);
     }
   });
   const st = flow.steps[key];
-  if (st && st.status !== "done" && st.status !== "failed") {
+  if (st && st.status !== "done" && st.status !== "failed" && st.status !== "running") {
     st.status = "running";
     st.at = now;
     st.attempts = st.attempts || 1;
     st.error = "";
     flow.currentStep = key;
     flow.status = "running";
+    changed.push(key);
+  }
+  if (changed.length) {
     await chrome.storage.local.set({ comboFlow: flow });
-    comboFlowNotify(flow, key, "running");
+    changed.forEach(function (k) {
+      comboFlowNotify(flow, k, flow.steps[k].status === "done" ? "done" : "running");
+    });
   }
 }
 
@@ -130,6 +137,7 @@ async function comboFlowDone(key) {
   if (!flow) return;
   const st = flow.steps && flow.steps[key];
   if (!st) return;
+  if (st.status === "done" || st.status === "failed") return;
   const now = Date.now();
   st.status = "done";
   st.ms = st.at ? now - st.at : 0;
@@ -147,22 +155,51 @@ async function comboFlowDone(key) {
   if (next) comboFlowNotify(flow, next[0], "running");
 }
 
+const COMBO_REFRESH_PATTERNS = {
+  email_submitted: /\/signup\/email/i,
+  billing_reached: /freetrial.*billing/i,
+  oauth_started: /o\/oauth2\/auth|accountchooser|signin\/oauth/i,
+  account_selected: /accountchooser|signin\/identifier/i,
+  terms_accepted: /speedbump|workspacetermsofservice/i,
+  consent_approved: /signin\/oauth\/v3\/consent/i,
+  callback_code: /antigravity\.google\/oauth-callback/i,
+};
+
+async function comboFlowRefreshStep(key) {
+  const re = COMBO_REFRESH_PATTERNS[key];
+  if (!re) return false;
+  return await new Promise(function (resolve) {
+    try {
+      chrome.tabs.query({}, function (tabs) {
+        let target = null;
+        for (let i = 0; i < tabs.length; i += 1) {
+          if (tabs[i].url && re.test(tabs[i].url)) { target = tabs[i]; break; }
+        }
+        if (!target || !target.id) { resolve(false); return; }
+        try {
+          chrome.tabs.reload(target.id, { bypassCache: true }, function () {
+            try { void chrome.runtime.lastError; } catch (e) {}
+            resolve(true);
+          });
+        } catch (e) { resolve(false); }
+      });
+    } catch (e) { resolve(false); }
+  });
+}
+
 async function comboFlowRetry(key, error) {
   const flow = await comboFlowGet();
   if (!flow) return false;
   const st = flow.steps && flow.steps[key];
   if (!st) return false;
   st.attempts = (st.attempts || 1) + 1;
-  if (st.attempts > 4) {
-    await comboFlowFail(key, error || "retry limit reached");
-    return false;
-  }
   st.status = "retrying";
   st.error = String(error || "");
   st.at = Date.now();
   flow.currentStep = key;
   await chrome.storage.local.set({ comboFlow: flow });
   comboFlowNotify(flow, key, "retrying", error);
+  try { await comboFlowRefreshStep(key); } catch (e) {}
   return true;
 }
 
@@ -179,17 +216,13 @@ async function comboFlowFail(key, error) {
   flow.currentStep = key;
   await chrome.storage.local.set({ comboFlow: flow });
   comboFlowNotify(flow, key, "failed", error);
-  try {
-    if (typeof comboFail === "function") {
-      await comboFail(flow.email, "failed at " + key + ": " + String(error || ""));
-    }
-  } catch (e) {}
+  // Do NOT auto-reject/close the profile here. Keep it open for retry/manual.
 }
 
 function comboFlowMapUrl(url) {
   const u = String(url || "").toLowerCase();
   if (u.indexOf("/signup/email") >= 0) return "email_submitted";
-  if (u.indexOf("verify-oob-code") >= 0 || u.indexOf("accountverification") >= 0) return "otp_submitted";
+  if (u.indexOf("verify-oob-code") >= 0) return "otp_submitted";
   if (u.indexOf("/signup/tos") >= 0) return "tos_accepted";
   if (u.indexOf("/freetrial") >= 0 && u.indexOf("billing") >= 0) return "billing_reached";
   if (u.indexOf("speedbump/workspacetermsofservice") >= 0) return "terms_accepted";
@@ -199,9 +232,49 @@ function comboFlowMapUrl(url) {
   return "";
 }
 
+function comboIsSignupSuccessUrl(url) {
+  const u = String(url || "").toLowerCase();
+  if (u.indexOf("console.cloud.google.com/freetrial") < 0) return false;
+  if (u.indexOf("/signup/") >= 0) return false;
+  if (u.indexOf("billing") >= 0) return false;
+  if (u.indexOf("unavailable") >= 0) return false;
+  if (!/[?&](cof|cto|fto)=/.test(u)) return false;
+  return true;
+}
+
+async function comboEarlyOauth(url) {
+  if (!comboIsSignupSuccessUrl(url)) return;
+  const st = await chrome.storage.local.get(["comboOauth", "interns", "currentIndex", "comboEarlyOauthAt"]);
+  if (st.comboEarlyOauthAt && Date.now() - Number(st.comboEarlyOauthAt) < 30000) return;
+  if (st.comboOauth && ["pending", "submitting", "completed"].indexOf(String(st.comboOauth.status)) >= 0) return;
+  const cur = (Array.isArray(st.interns) ? st.interns : [])[Number(st.currentIndex) || 0] || {};
+  const email = String((st.comboOauth && st.comboOauth.email) || cur.email || "").trim().toLowerCase();
+  if (!email) return;
+  await chrome.storage.local.set({ comboEarlyOauthAt: Date.now() });
+  console.log("[combo] early OAuth trigger on freetrial URL:", url);
+  try {
+    if (typeof comboStartOauth === "function") comboStartOauth(email).catch(function () {});
+  } catch (e) {}
+}
+
 async function comboFlowWatchdog() {
   const flow = await comboFlowGet();
-  if (!flow || flow.status !== "running") return;
+  if (!flow || flow.status !== "running") {
+    if (!flow) {
+      try {
+        chrome.tabs.query({}, function (tabs) {
+          for (let i = 0; i < tabs.length; i += 1) {
+            const step = comboFlowMapUrl(tabs[i].url);
+            if (step) {
+              comboFlowAdvance(step).catch(function () {});
+              break;
+            }
+          }
+        });
+      } catch (e) {}
+    }
+    return;
+  }
   const key = flow.currentStep;
   const st = flow.steps && flow.steps[key];
   if (!st || st.status === "done" || st.status === "failed") return;
@@ -233,6 +306,7 @@ function comboStartWatchdog() {
       const url = (info && info.url) || (tab && tab.url) || "";
       const step = comboFlowMapUrl(url);
       if (step) comboFlowAdvance(step).catch(function () {});
+      comboEarlyOauth(url).catch(function () {});
     });
   } catch (e) {}
 }
@@ -255,3 +329,5 @@ try {
     return undefined;
   });
 } catch (e) {}
+
+comboStartWatchdog();

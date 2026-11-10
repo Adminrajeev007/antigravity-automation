@@ -35,7 +35,9 @@ async function comboProxyConfig() {
         "<local>",
         "192.168.31.250",
         "agy-agylb-wu9iuq-1cc4ca-38-46-221-168.sslip.io",
-        "dispose.lol"
+        "dispose.lol",
+        "script.google.com",
+        "script.googleusercontent.com"
       ]
     }
   };
@@ -164,7 +166,47 @@ async function comboFail(email, reason) {
   await comboNotify("/failed", { email: email, uuid: cfg.uuid, reason: String(reason || "combo oauth failed") });
 }
 
-async function comboStartOauth(email) {
+let comboStartPromise = null;
+
+function comboStartOauth(email) {
+  if (comboStartPromise) return comboStartPromise;
+  comboStartPromise = doComboStartOauth(email).finally(function () { comboStartPromise = null; });
+  return comboStartPromise;
+}
+
+async function comboOpenOauthTab(authUrl) {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch (e) {}
+  let target = null;
+  for (var i = 0; i < tabs.length; i += 1) {
+    var u = String(tabs[i].url || "");
+    if (/accounts\.google\.com\/(.*oauth|accountchooser|signin\/(oauth|speedbump))|antigravity\.google\/oauth-callback/i.test(u)) { target = tabs[i]; break; }
+  }
+  var targetId = target && target.id;
+  if (targetId) {
+    try { await chrome.tabs.update(targetId, { url: authUrl, active: true }); } catch (e) { targetId = null; }
+  }
+  if (!targetId) {
+    try {
+      var created = await chrome.tabs.create({ url: authUrl, active: true });
+      targetId = created && created.id;
+    } catch (e) {}
+  }
+  try {
+    var after = await chrome.tabs.query({});
+    for (var j = 0; j < after.length; j += 1) {
+      var t = after[j];
+      if (!t.id || t.id === targetId) continue;
+      var tu = String(t.url || "");
+      if (/accounts\.google\.com\/(.*oauth|accountchooser|signin\/(oauth|speedbump))|antigravity\.google\/oauth-callback/i.test(tu)) {
+        try { await chrome.tabs.remove(t.id); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+  return targetId;
+}
+
+async function doComboStartOauth(email) {
   var value = String(email || "").trim().toLowerCase();
   if (!value) return { ok: false, error: "missing email" };
   if (!comboProxyApplied) await comboApplyProxy();
@@ -177,7 +219,11 @@ async function comboStartOauth(email) {
   var prior = stored.comboOauth || null;
   if (prior && prior.email === value && prior.authUrl && prior.state && prior.codeVerifier &&
       Date.now() - (prior.startedAt || 0) < 10 * 60 * 1000) {
-    await chrome.tabs.create({ url: prior.authUrl, active: true });
+    var priorStatus = String(prior.status || "");
+    if (priorStatus === "pending" || priorStatus === "submitting" || priorStatus === "starting" || priorStatus === "completed") {
+      return { ok: true, reused: true };
+    }
+    await comboOpenOauthTab(prior.authUrl);
     return { ok: true, reused: true };
   }
   await chrome.storage.local.set({
@@ -202,7 +248,7 @@ async function comboStartOauth(email) {
       }
     });
     try { await comboFlowDone("oauth_started"); } catch (e2) {}
-    await chrome.tabs.create({ url: authUrl, active: true });
+    await comboOpenOauthTab(authUrl);
     return { ok: true };
   } catch (e) {
     await chrome.storage.local.set({
@@ -254,24 +300,12 @@ async function comboSubmitOauthCode(code) {
 
     try { await comboFlowDone("api_callback"); } catch (e2) {}
     var token = comboExtractToken(accepted);
-    try {
-      if (token) await comboSheet({ action: "qr", email: oauth.email, userToken: token });
-      var done = await comboSheet({ action: "complete", email: oauth.email, notes: "completed" });
-      if (done && done.status && String(done.status).toLowerCase() !== "completed") {
-        throw new Error("sheet status not completed: " + String(done.status));
-      }
-    } catch (e) {
-      console.warn("[combo] sheet complete failed", e);
-      try { await comboFlowFail("sheet_completed", "Sheet complete failed: " + String(e.message || e)); } catch (e2) {}
-      return { ok: false, error: String(e.message || e) };
-    }
-
-    try { await comboFlowDone("sheet_completed"); } catch (e2) {}
     await chrome.storage.local.set({
       comboOauth: Object.assign({}, oauth, { status: "completed", message: "Completed", completedAt: Date.now(), token: token })
     });
-    await comboNotify("/combo-complete", { email: oauth.email, uuid: oauth.uuid || "", extId: chrome.runtime.id });
+    try { await comboFlowDone("sheet_completed"); } catch (e2) {}
     try { await comboFlowDone("profile_closed"); } catch (e2) {}
+    try { await comboNotify("/combo-complete", { email: oauth.email, uuid: oauth.uuid || "", token: token || "", extId: chrome.runtime.id }); } catch (e2) {}
     return { ok: true, email: oauth.email, token: token ? true : false };
   })().finally(function () { comboSubmitPromise = null; });
   return comboSubmitPromise;
@@ -304,3 +338,4 @@ try {
     ["asyncBlocking"]
   );
 } catch (e) {}
+

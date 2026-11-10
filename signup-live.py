@@ -26,6 +26,9 @@ C = {
 }
 ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
 
+STEP_ORDER = ['profile_created','email_submitted','otp_submitted','tos_accepted','billing_reached','oauth_started','account_selected','terms_accepted','consent_approved','callback_code','api_callback','sheet_completed','profile_closed']
+STEP_LABELS = {'profile_created':'profile','email_submitted':'email','otp_submitted':'otp','tos_accepted':'tos','billing_reached':'billing','oauth_started':'oauth','account_selected':'account','terms_accepted':'terms','consent_approved':'consent','callback_code':'code','api_callback':'api','sheet_completed':'sheet','profile_closed':'close'}
+
 
 def color(code, text):
     return f'{code}{text}{C["reset"]}'
@@ -70,6 +73,7 @@ state = {
     'emails': collections.OrderedDict(),
     'profiles': [],
     'events': collections.deque(maxlen=9),
+    'steps': {},
     'raw': collections.deque(maxlen=7),
     'counts': {'assigned': 0, 'completed': 0, 'errors': 0},
     'phone': {'running': False, 'ip': '', 'message': '—'},
@@ -120,6 +124,7 @@ def reset_run():
     state['emails'] = collections.OrderedDict()
     state['events'].clear()
     state['raw'].clear()
+    state['steps'].clear()
     state['counts'] = {'assigned': 0, 'completed': 0, 'errors': 0}
     positions['signup'] = 0
 
@@ -211,9 +216,21 @@ def parse_line(raw):
 
     m = re.search(r'billing sheet (\S+): (.*)', body)
     if m:
-        set_email(m.group(1), 'COMPLETED', ts, 'sheet saved')
+        email = m.group(1)
+        info = (m.group(2) or '').replace(' ', '')
+        if '"status":"completed"' in info:
+            set_email(email, 'COMPLETED', ts, 'sheet completed')
+            state['counts']['completed'] += 1
+            add_event(ts, f'sheet completed · {email}', 'green')
+        else:
+            set_email(email, 'BILLING', ts, 'sheet pending')
+            add_event(ts, f'billing saved · {email}', 'cyan')
+
+    m = re.search(r'combo complete for (\S+)', body)
+    if m:
+        set_email(m.group(1), 'COMPLETED', ts, 'combo complete')
         state['counts']['completed'] += 1
-        add_event(ts, f'sheet completed · {m.group(1)}', 'green')
+        add_event(ts, f'combo complete · {m.group(1)}', 'green')
 
     m = re.search(r'signup error page detected for (\S+)', body)
     if m:
@@ -221,10 +238,17 @@ def parse_line(raw):
         state['counts']['errors'] += 1
         add_event(ts, f'signup error · {m.group(1)}', 'red')
 
+    m = re.search(r'\[step\] (\S+) (\S+) (\S+) attempt=(\d+)(?: error=(.*))?', body)
+    if m:
+        email, step, status, attempt, error = m.group(1), m.group(2), m.group(3), int(m.group(4)), (m.group(5) or '')
+        state['steps'].setdefault(email, {})[step] = {'status': status, 'attempt': attempt, 'error': error, 'ts': ts}
+        if status in ('retrying', 'failed'):
+            add_event(ts, f'{email} · {step} {status} ({attempt})', 'red' if status == 'failed' else 'yellow')
+
     m = re.search(r'session ended \(([^)]+)\) for (\S+)', body)
     if m:
         reason, email = m.group(1), m.group(2)
-        if reason in ('billing', 'qr-saved'):
+        if reason in ('billing', 'qr-saved', 'combo-complete'):
             set_email(email, 'COMPLETED', ts, reason)
             state['counts']['completed'] += 1
             add_event(ts, f'completed ({reason}) · {email}', 'green')
@@ -367,6 +391,36 @@ def render():
             ))
     else:
         print(row(color(C['dim'], '  waiting for batch emails…')))
+    print(sep())
+
+    print(sep())
+    print(row(color(C['bold'], ' STEPS')))
+    if state['steps']:
+        email = max(state['steps'].items(), key=lambda kv: max((x.get('ts', '') for x in kv[1].values()), default=''))[0]
+        steps = state['steps'][email]
+        parts = []
+        for key in STEP_ORDER:
+            item = steps.get(key)
+            if not item:
+                icon, tone = '○', 'grey'
+            else:
+                st = item['status']
+                if st == 'done':
+                    icon, tone = '✓', 'green'
+                elif st == 'failed':
+                    icon, tone = '✖', 'red'
+                elif st == 'retrying':
+                    icon, tone = '↻', 'yellow'
+                else:
+                    icon, tone = '●', 'cyan'
+            parts.append((key, icon, tone))
+        for i in range(0, len(parts), 5):
+            chunk = parts[i:i + 5]
+            text = '  ' + '   '.join(color(C[tone], icon + ' ' + STEP_LABELS.get(key, key)) for key, icon, tone in chunk)
+            print(row(text))
+        print(row(color(C['dim'], '  ' + email)))
+    else:
+        print(row(color(C['dim'], '  waiting for steps…')))
     print(sep())
 
     print(row(color(C['bold'], ' EVENTS')))

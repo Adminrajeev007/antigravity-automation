@@ -4,8 +4,7 @@ importScripts("sheet-sync.js"); // additive: QR email -> Google Sheet
 importScripts("email-gen.js", "auto-email.js"); // additive: auto next email
 importScripts("auto-assign.js"); // additive: assign email when profile opens
 importScripts("combo-oauth.js"); // combo: OAuth after billing
-// importScripts("combo-oauth-proxy.js"); // approach A: bypass proxy for OAuth hosts only
-importScripts("combo-direct-on-signup.js"); // approach B: full direct internet after signup
+importScripts("combo-oauth-proxy.js"); // combo: bypass proxy for OAuth tabs only
 importScripts("combo-flow.js"); // combo: step state machine + retries
 
 const DEFAULTS = {
