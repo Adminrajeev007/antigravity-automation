@@ -102,6 +102,7 @@ const SHEET_WEBAPP_URL = process.env.SHEET_WEBAPP_URL || 'https://script.google.
 const SHEET_TOKEN = process.env.SHEET_TOKEN || 'change-this-sheet-token'
 const MAX_RUNS = Number(process.env.ORCH_MAX_RUNS || 0)
 const BATCH_SIZE = Math.max(1, Number(process.env.ORCH_BATCH || 2))
+const BATCH_TIMEOUT_MS = Math.max(0, Number(process.env.ORCH_BATCH_TIMEOUT_MS || 0))
 const EXT_BASE_ENV = process.env.ORCH_EXT_ID || ''
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -1039,6 +1040,18 @@ async function startSession(email) {
   }
 }
 
+async function abortBatch(started) {
+  for (const s of started) {
+    if (!sessions.has(s.uuid)) continue
+    try {
+      log(`batch timeout: closing ${s.email}`)
+      await deleteSession(s, 'batch-timeout', 0)
+    } catch (e) {
+      log(`batch timeout: close failed for ${s.email}: ${e.message}`)
+    }
+  }
+}
+
 async function waitSession(sess) {
   const timer = COMBO ? null : setTimeout(() => {
     log(`session timeout after ${Math.round(SESSION_TIMEOUT_MS / 1000)}s for ${sess.email}`)
@@ -1435,6 +1448,7 @@ async function main() {
 
       const emails = generateBatchEmails(BATCH_SIZE)
       log(`batch emails: ${emails.join(', ')}`)
+      const batchStartedAt = Date.now()
 
       const started = []
       for (const email of emails) {
@@ -1458,7 +1472,20 @@ async function main() {
       }
 
       log(`waiting for ${started.length} profile(s): ${started.map((s) => s.email).join(', ')}`)
-      await Promise.allSettled(started.map((s) => waitSession(s)))
+      const waitAll = Promise.allSettled(started.map((s) => waitSession(s)))
+      if (BATCH_TIMEOUT_MS > 0) {
+        const remaining = Math.max(0, batchStartedAt + BATCH_TIMEOUT_MS - Date.now())
+        const timedOut = await Promise.race([
+          waitAll.then(() => false),
+          sleep(remaining).then(() => true),
+        ])
+        if (timedOut) {
+          log(`batch timeout after ${Math.round(BATCH_TIMEOUT_MS / 1000)}s — deleting ${started.length} profile(s)`)
+          await abortBatch(started)
+        }
+      } else {
+        await waitAll
+      }
       log(`batch ${batch} complete — toggling IP for next batch`)
     } catch (e) {
       if (e && e.restartBatch) {
