@@ -1,11 +1,12 @@
 // Combo OAuth content: select the signup account, accept consent/speedbump,
-// capture the OAuth code from the callback page, and show live status.
+// capture the OAuth code from the callback page, and report each step.
 (function () {
   if (window.top !== window) return;
 
   var comboEmail = "";
   var sentCode = "";
   var lastClickAt = 0;
+  var lastPageStep = "";
   var badge = null;
 
   function refreshEmail() {
@@ -15,6 +16,16 @@
         if (o && o.email) comboEmail = String(o.email).toLowerCase();
       });
     } catch (e) {}
+  }
+
+  function reportPage(step) {
+    if (!step || step === lastPageStep) return;
+    lastPageStep = step;
+    try { chrome.runtime.sendMessage({ type: "COMBO_PAGE", step: step }, function () { try { void chrome.runtime.lastError; } catch (e) {} }); } catch (e) {}
+  }
+
+  function reportDone(step) {
+    try { chrome.runtime.sendMessage({ type: "COMBO_STEP_DONE", step: step }, function () { try { void chrome.runtime.lastError; } catch (e) {} }); } catch (e) {}
   }
 
   function ensureBadge() {
@@ -100,7 +111,11 @@
       var els = Array.prototype.slice.call(document.querySelectorAll("[" + attr + "]")).filter(function (el) {
         return visible(el) && String(el.getAttribute(attr) || "").toLowerCase().indexOf(comboEmail) >= 0;
       });
-      if (els.length) return click(clickable(els[0]));
+      if (els.length) {
+        var ok = click(clickable(els[0]));
+        if (ok) reportDone("account_selected");
+        return ok;
+      }
     }
     var nodes = Array.prototype.slice.call(document.querySelectorAll("li,a,button"))
       .filter(function (el) {
@@ -111,12 +126,20 @@
       })
       .sort(function (a, b) { return (a.textContent || "").length - (b.textContent || "").length; });
     if (!nodes.length) return false;
-    return click(clickable(nodes[0]));
+    var done = click(clickable(nodes[0]));
+    if (done) reportDone("account_selected");
+    return done;
   }
 
   function clickConsent() {
+    var href = String(location.href || "").toLowerCase();
     var approve = document.getElementById("submit_approve_access");
-    if (approve && visible(approve)) return click(approve);
+    if (approve && visible(approve)) {
+      var step = href.indexOf("speedbump") >= 0 ? "terms_accepted" : "consent_approved";
+      var ok = click(approve);
+      if (ok) reportDone(step);
+      return ok;
+    }
     var allowed = ["allow", "continue", "i understand", "accept", "next", "agree", "confirm", "sign in"];
     var blocked = ["deny", "cancel", "back", "reject", "not now", "use another account"];
     var nodes = Array.prototype.slice.call(document.querySelectorAll("button,[role=button],a,div[role=button]"));
@@ -127,7 +150,11 @@
       if (!text || text.length > 40) continue;
       if (blocked.some(function (b) { return text.indexOf(b) >= 0; })) continue;
       if (allowed.some(function (a) { return text === a || text.indexOf(a) === 0; })) {
-        return click(el);
+        var step2 = href.indexOf("speedbump") >= 0 || text.indexOf("i understand") >= 0
+          ? "terms_accepted" : "consent_approved";
+        var ok2 = click(el);
+        if (ok2) reportDone(step2);
+        return ok2;
       }
     }
     return false;
@@ -155,7 +182,8 @@
   }
 
   function sendCode(code) {
-    if (!code || sentCode === code) return;
+    if (!code) return;
+    if (sentCode === code) return;
     sentCode = code;
     showStatus("code captured — sending to API…", "warn");
     try {
@@ -166,10 +194,25 @@
         refreshStatus();
       });
     } catch (e) {}
+    reportDone("callback_code");
+  }
+
+  function pageStep() {
+    var href = String(location.href || "").toLowerCase();
+    if (href.indexOf("antigravity.google/oauth-callback") >= 0) return "callback_code";
+    if (document.getElementById("submit_approve_access")) {
+      return href.indexOf("speedbump") >= 0 ? "terms_accepted" : "consent_approved";
+    }
+    if (href.indexOf("speedbump/workspacetermsofservice") >= 0) return "terms_accepted";
+    if (document.querySelector("[data-identifier]")) return "account_selected";
+    if (href.indexOf("/o/oauth2/auth") >= 0 || href.indexOf("/signin/oauth") >= 0) return "account_selected";
+    return "";
   }
 
   function tick() {
     var href = String(location.href || "");
+    var step = pageStep();
+    if (step) reportPage(step);
     if (href.indexOf("antigravity.google/oauth-callback") >= 0) {
       ensureBadge();
       var code = extractCode();
@@ -187,6 +230,21 @@
       if (fillEmailIfSignIn()) return;
     }
   }
+
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (!msg || msg.type !== "COMBO_RETRY_STEP") return;
+      lastClickAt = 0;
+      lastPageStep = "";
+      if (msg.step === "callback_code") {
+        sentCode = "";
+        var c = extractCode();
+        if (c) sendCode(c);
+      } else {
+        tick();
+      }
+    });
+  } catch (e) {}
 
   refreshEmail();
   refreshStatus();

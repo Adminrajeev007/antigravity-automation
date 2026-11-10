@@ -4,6 +4,7 @@ importScripts("sheet-sync.js"); // additive: QR email -> Google Sheet
 importScripts("email-gen.js", "auto-email.js"); // additive: auto next email
 importScripts("auto-assign.js"); // additive: assign email when profile opens
 importScripts("combo-oauth.js"); // combo: OAuth after billing
+importScripts("combo-flow.js"); // combo: step state machine + retries
 
 const DEFAULTS = {
   domain: "fussion.studio",

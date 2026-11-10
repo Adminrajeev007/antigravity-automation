@@ -79,6 +79,16 @@
     });
   }
 
+  // A billing / unavailable signup still owns a live Google account, so kick
+  // off the inline OAuth flow instead of deleting the profile.
+  function startCombo_(email) {
+    try {
+      if (typeof comboStartOauth === "function") {
+        comboStartOauth(String(email || "").trim().toLowerCase()).catch(function () {});
+      }
+    } catch (e) {}
+  }
+
   function flush_() {
     return chrome.storage.local.get([OUTBOX_KEY]).then(function (s) {
       var box = Array.isArray(s[OUTBOX_KEY]) ? s[OUTBOX_KEY] : [];
@@ -90,11 +100,10 @@
         chain = chain.then(function () {
           return postJson_(item.payload).then(function () {
             flushed += 1;
-            if (item.payload && item.payload.kind === "unavailable") {
-              requestProfileDelete_(0, "signup-unavailable").catch(function () {});
+            if (item.payload && (item.payload.kind === "billing" || item.payload.kind === "unavailable")) {
+              startCombo_(item.payload.email);
             } else if (item.payload && item.payload.action === "qr") {
-              var d = item.payload.kind === "billing" ? 0 : undefined;
-              requestProfileDelete_(d).catch(function () {});
+              requestProfileDelete_().catch(function () {});
             }
           }, function () { kept.push(item); });
         });
@@ -183,8 +192,9 @@
 
   // Octo refuses to delete an active profile, so a local helper does stop+delete.
   // The helper resolves the profile; the extension only sends its extension id.
-  // Signup page says "Free Trial signup is temporarily down": save the email
-  // as rejected (so the login extension won't pick it), then close the profile.
+  // Signup page says "Free Trial signup is temporarily down": the Google
+  // account already exists, so treat it as a completed signup. Record the email
+  // and immediately start OAuth so the final API callback still runs.
   function pushUnavailable_(msg) {
     return chrome.storage.local.get(["portalToken"]).then(function (s) {
       var payload = {
@@ -193,13 +203,14 @@
         email: String(msg.email || "").trim().toLowerCase(),
         at: iso_(msg.at),
         userToken: String(s.portalToken || "").trim(),
-        notes: "signup unavailable"
+        notes: "signup unavailable — treating as completed, starting oauth"
       };
       if (!payload.email || payload.email.indexOf("@") < 0) return { ok: false, error: "no email" };
       return postJson_(payload).then(function (r) {
-        requestProfileDelete_(0, "signup-unavailable").catch(function () {});
+        startCombo_(payload.email);
         return r;
       }, function (err) {
+        startCombo_(payload.email);
         return enqueue_(payload).then(function () {
           return { ok: false, queued: true, error: String((err && err.message) || err) };
         });

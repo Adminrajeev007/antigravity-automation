@@ -52,14 +52,17 @@
       var cur = (s.interns || [])[s.currentIndex];
       if (!cur || !cur.email) return;
 
-      // Reaching the billing page counts as a completed signup.
-      if (kind === "billing") {
+      // Reaching the billing page — or the "Free Trial signup is temporarily
+      // down" page — counts as a completed signup: the Google account already
+      // exists, so we keep the profile and move straight to OAuth.
+      if (kind === "billing" || kind === "unavailable") {
         var interns = Array.isArray(s.interns) ? s.interns.slice() : [];
         var idx = Number(s.currentIndex) || 0;
         if (interns[idx]) {
+          var suffix = kind === "billing" ? "billing reached" : "signup unavailable (oauth)";
           interns[idx] = Object.assign({}, interns[idx], {
             status: "done",
-            note: ((interns[idx].note || "") + " — billing reached").trim()
+            note: ((interns[idx].note || "") + " — " + suffix).trim()
           });
           try { await chrome.storage.local.set({ interns: interns }); } catch (e) {}
         }
