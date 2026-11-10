@@ -236,7 +236,7 @@ async function uploadExtension() {
   const compound = wantVersion ? `${comboExt}@${wantVersion}` : ''
   if (compound) {
     try {
-      const listed = JSON.parse(curlText(['-sS', `${base}/api/v2/teams/extensions`], 15000))
+      const listed = JSON.parse(curlText(['-sS', `${base}/api/v2/teams/extensions`], 60000))
       const lib = listed && listed.data
       if (listed && listed.success && lib && lib[compound]) {
         EXT = { zip, compoundId: compound, extBase: comboExt, version: wantVersion }
