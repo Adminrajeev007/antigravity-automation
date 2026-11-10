@@ -229,7 +229,23 @@ function findZip() {
 async function uploadExtension() {
   const zip = findZip()
   if (!zip) throw new Error('extension zip not found (set EXT_ZIP)')
-  const url = `http://127.0.0.1:${octoPort()}/api/v2/teams/extensions/load_blob?update=true`
+  const base = `http://127.0.0.1:${octoPort()}`
+  const mv = path.basename(zip).match(/v([\d.]+)\.zip/i)
+  const wantVersion = mv ? mv[1] : ''
+  const comboExt = 'ekhlgiokhlcmhpmgijpponhedkipaaik'
+  const compound = wantVersion ? `${comboExt}@${wantVersion}` : ''
+  if (compound) {
+    try {
+      const listed = JSON.parse(curlText(['-sS', `${base}/api/v2/teams/extensions`], 15000))
+      const lib = listed && listed.data
+      if (listed && listed.success && lib && lib[compound]) {
+        EXT = { zip, compoundId: compound, extBase: comboExt, version: wantVersion }
+        log(`extension ${wantVersion} ready (${compound})`)
+        return EXT
+      }
+    } catch (e) {}
+  }
+  const url = `${base}/api/v2/teams/extensions/load_blob?update=true`
   let data = null
   try {
     const out = curlText(['-sS', '-X', 'POST', url, '-F', `file=@${zip};type=application/zip`], 180000)
