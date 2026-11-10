@@ -229,15 +229,18 @@ function findZip() {
 async function uploadExtension() {
   const zip = findZip()
   if (!zip) throw new Error('extension zip not found (set EXT_ZIP)')
-  const form = new FormData()
-  form.append('file', new Blob([fs.readFileSync(zip)], { type: 'application/zip' }), path.basename(zip))
-  const res = await fetch(`http://127.0.0.1:${octoPort()}/api/v2/teams/extensions/load_blob?update=true`, {
-    method: 'POST',
-    body: form,
-    signal: AbortSignal.timeout(180000),
-  })
-  const data = await res.json()
-  if (!data.success) throw new Error(`extension upload failed: ${JSON.stringify(data.error || data)}`)
+  const url = `http://127.0.0.1:${octoPort()}/api/v2/teams/extensions/load_blob?update=true`
+  let data = null
+  try {
+    const out = curlText(['-sS', '-X', 'POST', url, '-F', `file=@${zip};type=application/zip`], 180000)
+    data = JSON.parse(out)
+  } catch (e) {
+    const form = new FormData()
+    form.append('file', new Blob([fs.readFileSync(zip)], { type: 'application/zip' }), path.basename(zip))
+    const res = await fetch(url, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) })
+    data = await res.json()
+  }
+  if (!data || !data.success) throw new Error(`extension upload failed: ${JSON.stringify((data && (data.error || data)) || 'no response')}`)
   const item = Array.isArray(data.data) ? data.data[0] : data.data
   EXT = { zip, compoundId: item.id, extBase: item.ext_id, version: item.version }
   log(`extension ${EXT.version} ready (${EXT.compoundId})`)
