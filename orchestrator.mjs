@@ -1487,6 +1487,7 @@ async function main() {
         await waitAll
       }
       log(`batch ${batch} complete — toggling IP for next batch`)
+      await sleep(30000)
     } catch (e) {
       if (e && e.restartBatch) {
         resetSessions('profile-reset')
