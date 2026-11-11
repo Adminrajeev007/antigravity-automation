@@ -455,7 +455,7 @@ async function handleOtp(state) {
     const arrivedAt = Date.now();
     // Mandatory settle wait: the API initially returns the PREVIOUS (stale)
     // code; the fresh one for this signup lands a few seconds later.
-    setStatus("OTP page opened — waiting 5s for the FRESH code (ignoring stale)...");
+    setStatus("OTP page opened — waiting 2s for the FRESH code (ignoring stale)...");
     await randDelay(5000, 6500);
 
     // Poll until a code with a fresh timestamp arrives.

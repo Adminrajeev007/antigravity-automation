@@ -16,19 +16,19 @@ const COMBO_STEPS = [
 ];
 
 const COMBO_STEP_TIMEOUTS = {
-  profile_created: 60000,
-  email_submitted: 30000,
-  otp_submitted: 90000,
-  tos_accepted: 45000,
-  billing_reached: 60000,
-  oauth_started: 30000,
-  account_selected: 25000,
-  terms_accepted: 20000,
-  consent_approved: 20000,
-  callback_code: 20000,
-  api_callback: 160000,
-  sheet_completed: 60000,
-  profile_closed: 20000,
+  profile_created: 45000,
+  email_submitted: 15000,
+  otp_submitted: 45000,
+  tos_accepted: 25000,
+  billing_reached: 30000,
+  oauth_started: 20000,
+  account_selected: 15000,
+  terms_accepted: 10000,
+  consent_approved: 10000,
+  callback_code: 45000,
+  api_callback: 90000,
+  sheet_completed: 45000,
+  profile_closed: 15000,
 };
 
 const COMBO_STEP_LABELS = {
@@ -157,6 +157,8 @@ async function comboFlowDone(key) {
 
 const COMBO_REFRESH_PATTERNS = {
   email_submitted: /\/signup\/email/i,
+  otp_submitted: /verify-oob-code/i,
+  tos_accepted: /\/signup\/tos/i,
   billing_reached: /freetrial.*billing/i,
   oauth_started: /o\/oauth2\/auth|accountchooser|signin\/oauth/i,
   account_selected: /accountchooser|signin\/identifier/i,
@@ -199,7 +201,7 @@ async function comboFlowRetry(key, error) {
   flow.currentStep = key;
   await chrome.storage.local.set({ comboFlow: flow });
   comboFlowNotify(flow, key, "retrying", error);
-  try { await comboFlowRefreshStep(key); } catch (e) {}
+  if (st.attempts === 2) { try { await comboFlowRefreshStep(key); } catch (e) {} }
   return true;
 }
 
