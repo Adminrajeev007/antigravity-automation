@@ -1,0 +1,8 @@
+{
+  "url": "http://testuser:testpass@192.168.31.250:1080",
+  "ipApiBase": "http://192.168.31.250:8000",
+  "ipApiKey": "0xMYjVe--sgu3wTFVfeN2Re2Z8UKa2nY",
+  "pollTimeoutMs": 180000,
+  "pollIntervalMs": 15000,
+  "tetherIp": ""
+}
