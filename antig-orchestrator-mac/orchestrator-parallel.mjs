@@ -1438,7 +1438,10 @@ async function main() {
         ? (await proxyEgress())
         : (ROTATE_USB ? (await proxyEgress()) : (await hostNetwork()).egressIp)
       let cycled
-      if (batch === 1 && process.env.ORCH_SKIP_FIRST_ROTATE !== '0') {
+      if (!ROTATE_IP) {
+        cycled = { before, after: before, network: null }
+        log(`batch ${batch}: no IP rotation (proxy rotates itself)`)
+      } else if (batch === 1 && process.env.ORCH_SKIP_FIRST_ROTATE !== '0') {
         cycled = { before, after: before, network: null }
         log(`batch 1: using current proxy IP ${before || 'unknown'} (rotation starts after this batch)`)
       } else {
