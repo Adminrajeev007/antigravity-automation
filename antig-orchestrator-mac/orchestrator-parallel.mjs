@@ -789,7 +789,6 @@ async function postSheetComplete(email, token) {
       let data = null
       try { data = JSON.parse(text) } catch {}
       if (res.ok && (!data || data.ok !== false)) {
-        log(`sheet complete ${email}: ${text.slice(0, 200)}`)
         return true
       }
       last = (data && (data.error || data.message)) || `HTTP ${res.status}: ${text.slice(0, 120)}`
@@ -813,9 +812,7 @@ function queueBillingEmail(email) {
     })
     if (!found) fs.appendFileSync(SHEET_QUEUE_FILE, JSON.stringify({ email, at: Date.now() }) + '\n')
     billingSheetQueued.add(email)
-    log(`billing sheet queued for retry: ${email}`)
   } catch (e) {
-    log(`billing sheet queue write failed for ${email}: ${e.message}`)
   }
 }
 
@@ -831,9 +828,7 @@ function queueSheetComplete(email, token) {
     lines.push(JSON.stringify({ email, action: 'complete', token: String(token || ''), at: Date.now() }))
     fs.writeFileSync(SHEET_QUEUE_FILE, lines.join('\n') + '\n')
     billingSheetQueued.delete(email)
-    log(`sheet complete queued for backend: ${email}`)
   } catch (e) {
-    log(`sheet complete queue write failed for ${email}: ${e.message}`)
   }
 }
 
@@ -866,7 +861,6 @@ async function flushSheetQueue() {
         }
         if (completeOk) {
           saved += 1
-          log(`sheet queue flushed ${email} (billing + complete)`)
         } else {
           keep.push(...entries)
         }
@@ -889,10 +883,8 @@ async function saveBillingToSheet(email) {
       try {
         const text = await postBillingEmail(email)
         billingSheetQueued.delete(email)
-        log(`billing sheet ${email}: ${text.slice(0, 200)}`)
         return
       } catch (e) {
-        log(`billing sheet failed for ${email} (attempt ${attempt}/3): ${e.message}`)
         if (attempt < 3) await sleep(3000 * attempt)
       }
     }
@@ -1508,7 +1500,6 @@ async function main() {
       try { left = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').trim() } catch {}
       if (!left) { log('backend sheet queue empty'); break }
       const n = left.split('\n').filter(Boolean).length
-      log(`backend sheet queue pending (${n}); retrying in 15s`)
       await sleep(15000)
     }
   } catch {}
