@@ -418,6 +418,7 @@ async function deleteAllProfilesPass() {
       await deleteProfile(uuid, null, 0)
       deleted += 1
       log(`profile reset: deleted ${uuid}`)
+      await sleep(1500)
     } catch (e) {
       if (/cannot delete active/i.test(e.message)) blocked = true
       log(`profile reset: could not delete ${uuid}: ${e.message}`)
@@ -1446,16 +1447,16 @@ async function main() {
 
       const started = []
       const startOne = async (email) => {
-        for (let attempt = 1; attempt <= 4; attempt += 1) {
+        for (let attempt = 1; attempt <= 6; attempt += 1) {
           try { return await startSession(email) } catch (e) {
             if (e && e.restartBatch) throw e
-            log(`start failed for ${email} (attempt ${attempt}/4): ${e.message}`)
-            if (attempt < 4) await sleep(1500 + attempt * 1500 + Math.random() * 1000)
+            log(`start failed for ${email} (attempt ${attempt}/6): ${e.message}`)
+            if (attempt < 6) await sleep(3000 + attempt * 1500 + Math.random() * 1000)
           }
         }
         return null
       }
-      const results = await Promise.allSettled(emails.map((email, i) => sleep(i * 350).then(() => startOne(email))))
+      const results = await Promise.allSettled(emails.map((email, i) => sleep(i * 3000).then(() => startOne(email))))
       for (const r of results) if (r.status === 'fulfilled' && r.value) started.push(r.value)
 
       if (started.length === 0) {
