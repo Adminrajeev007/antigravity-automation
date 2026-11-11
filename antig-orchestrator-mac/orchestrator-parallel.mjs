@@ -1446,16 +1446,16 @@ async function main() {
 
       const started = []
       const startOne = async (email) => {
-        for (let attempt = 1; attempt <= 2; attempt += 1) {
+        for (let attempt = 1; attempt <= 4; attempt += 1) {
           try { return await startSession(email) } catch (e) {
             if (e && e.restartBatch) throw e
-            log(`start failed for ${email} (attempt ${attempt}/2): ${e.message}`)
-            if (attempt < 2) await sleep(2500 + Math.random() * 1500)
+            log(`start failed for ${email} (attempt ${attempt}/4): ${e.message}`)
+            if (attempt < 4) await sleep(1500 + attempt * 1500 + Math.random() * 1000)
           }
         }
         return null
       }
-      const results = await Promise.allSettled(emails.map((email) => startOne(email)))
+      const results = await Promise.allSettled(emails.map((email, i) => sleep(i * 350).then(() => startOne(email))))
       for (const r of results) if (r.status === 'fulfilled' && r.value) started.push(r.value)
 
       if (started.length === 0) {
