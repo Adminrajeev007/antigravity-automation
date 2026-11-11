@@ -177,6 +177,7 @@ function profileProxy() {
 
 let EXT = null // { zip, compoundId, extBase, version }
 const sessions = new Map()
+let batchSlotChecked = false
 
 // ---------------- Octo API ----------------
 function octoPort() {
@@ -470,9 +471,13 @@ async function createProfile(name, extId) {
     if (!isProfileCreationError(e)) throw e
     let last = e
     for (let attempt = 1; attempt <= 3 && !created; attempt += 1) {
-      const freed = await freeProfileSlot()
-      if (!freed) break
-      await sleep(2500)
+      if (batchSlotChecked && attempt === 1) { await sleep(1500); }
+      else {
+        const freed = await freeProfileSlot()
+        batchSlotChecked = true
+        if (!freed) break
+        await sleep(1000)
+      }
       try {
         created = await octo('POST', '/api/v2/profiles/quick', quick)
       } catch (e2) {
@@ -1000,7 +1005,7 @@ async function startSession(email) {
   try {
     started = await startProfile(uuid)
     const assigned = await assignViaExtensionPage(started.debugPort, started.wsEndpoint, email, uuid)
-    await sleep(4000)
+    await sleep(500)
     await dedupeFlowTabs(started.debugPort, started.wsEndpoint)
     const sess = {
       uuid,
@@ -1420,6 +1425,7 @@ async function main() {
   while (MAX_RUNS === 0 || batch < MAX_RUNS) {
     batch += 1
     log(`===== batch ${batch}${MAX_RUNS ? '/' + MAX_RUNS : ''} (${BATCH_SIZE} profile${BATCH_SIZE > 1 ? 's' : ''}) =====`)
+    batchSlotChecked = false
     try {
       await ensureTether()
       const before = PROXY_MODE
