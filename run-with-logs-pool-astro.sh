@@ -2,7 +2,7 @@
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$DIR/antig-orchestrator-mac/run.sh" ]; then
+if [ -f "$DIR/antig-orchestrator-mac/run-pool.sh" ]; then
   BUNDLE="$DIR/antig-orchestrator-mac"
 else
   BUNDLE="$DIR"
