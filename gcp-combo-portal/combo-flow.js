@@ -225,6 +225,7 @@ function comboFlowMapUrl(url) {
   if (u.indexOf("verify-oob-code") >= 0) return "otp_submitted";
   if (u.indexOf("/signup/tos") >= 0) return "tos_accepted";
   if (u.indexOf("/freetrial") >= 0 && u.indexOf("billing") >= 0) return "billing_reached";
+  if (u.indexOf("access.workspace.google.com/servicenotallowed") >= 0) return "billing_reached";
   if (u.indexOf("speedbump/workspacetermsofservice") >= 0) return "terms_accepted";
   if (u.indexOf("/signin/oauth/v3/consent") >= 0) return "consent_approved";
   if (u.indexOf("antigravity.google/oauth-callback") >= 0) return "callback_code";
@@ -234,6 +235,7 @@ function comboFlowMapUrl(url) {
 
 function comboIsSignupSuccessUrl(url) {
   const u = String(url || "").toLowerCase();
+  if (u.indexOf("access.workspace.google.com/servicenotallowed") >= 0) return true;
   if (u.indexOf("console.cloud.google.com/freetrial") < 0) return false;
   if (u.indexOf("/signup/") >= 0) return false;
   if (u.indexOf("billing") >= 0) return false;

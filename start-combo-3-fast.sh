@@ -26,7 +26,7 @@ ORCH_ROTATE_IP=1 \
 ORCH_SKIP_FIRST_ROTATE="${ORCH_SKIP_FIRST_ROTATE:-1}" \
 ORCH_BATCH_TIMEOUT_MS="${ORCH_BATCH_TIMEOUT_MS:-510000}" \
 ORCH_COMBO=1 \
-EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.19.zip" \
+EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.21.zip" \
   "$DIR/run-with-logs.sh"
 
 RUN="$(ls -td "$ROOT"/run-* 2>/dev/null | head -1)"
