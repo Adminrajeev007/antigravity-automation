@@ -290,22 +290,24 @@ async function deleteProfile(uuid, extId, delayMs = 0) {
   const target = await resolveProfile(uuid, extId)
   if (!target) return { ok: false, error: 'no active profile found' }
   if (delayMs > 0) await sleep(delayMs)
-  // instant: stop the browser now, delete in the background
-  try { await octo('POST', '/api/profiles/stop', { uuid: target }, 12000) } catch {}
-  ;(async () => {
-    for (let i = 0; i < 30; i += 1) {
-      try {
-        await octo('POST', '/api/v2/profiles/delete', { uuids: [target] }, 20000)
-        return
-      } catch (e) {
-        if (/cannot delete active/i.test(e.message)) {
-          try { await octo('POST', '/api/profiles/force_stop', { uuid: target }, 10000) } catch {}
-        }
-        await sleep(1500 + i * 1000)
+
+  try { await octo('POST', '/api/profiles/stop', { uuid: target }) } catch {}
+  await sleep(1200)
+
+  let last = null
+  for (let i = 0; i < 10; i += 1) {
+    try {
+      await octo('POST', '/api/v2/profiles/delete', { uuids: [target] })
+      return { ok: true, uuid: target }
+    } catch (e) {
+      last = e
+      if (/cannot delete active/i.test(e.message)) {
+        try { await octo('POST', '/api/profiles/force_stop', { uuid: target }) } catch {}
       }
+      await sleep(700 + i * 250)
     }
-  })().catch(() => {})
-  return { ok: true, uuid: target, background: true }
+  }
+  throw last || new Error('delete failed')
 }
 
 // ---------------- profiles ----------------
@@ -418,7 +420,6 @@ async function deleteAllProfilesPass() {
       await deleteProfile(uuid, null, 0)
       deleted += 1
       log(`profile reset: deleted ${uuid}`)
-      await sleep(1500)
     } catch (e) {
       if (/cannot delete active/i.test(e.message)) blocked = true
       log(`profile reset: could not delete ${uuid}: ${e.message}`)
