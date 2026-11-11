@@ -3,7 +3,7 @@
 
 const COMBO_API_BASE = "http://agy-agylb-wu9iuq-1cc4ca-38-46-221-168.sslip.io";
 const COMBO_DEFAULT_API_KEY = "9dfe1d39f1238d25dd122cc6d2a07b12q554aa97fc37a5be17e7c49ef0bd62e1";
-const COMBO_PROXY_URL = "http://testuser:testpass@192.168.31.250:1080";
+const COMBO_PROXY_URL = "http://gcp_workspace:bombom1234@proxy-admin.astroai.eu.cc:8082";
 const COMBO_SHEET_URL = "https://script.google.com/macros/s/AKfycbzoCHT0aGmxBzTD_j9gEU1JFxBW52_NUj7x-NHW_D_W_PmIZ4YIWWCOWtIcR2fojkfs/exec";
 const COMBO_SHEET_TOKEN = "change-this-sheet-token";
 const COMBO_ORCH = "http://127.0.0.1:8791";
@@ -332,7 +332,7 @@ try {
 try {
   chrome.webRequest.onAuthRequired.addListener(
     function (details, callback) {
-      callback({ authCredentials: { username: "testuser", password: "testpass" } });
+      callback({ authCredentials: { username: "gcp_workspace", password: "bombom1234" } });
     },
     { urls: ["<all_urls>"] },
     ["asyncBlocking"]
