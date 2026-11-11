@@ -1,0 +1,8 @@
+{
+  "url": "http://gcp_workspace:bombom1234@proxy-admin.astroai.eu.cc:8082",
+  "ipApiBase": "",
+  "ipApiKey": "",
+  "pollTimeoutMs": 180000,
+  "pollIntervalMs": 15000,
+  "tetherIp": ""
+}
