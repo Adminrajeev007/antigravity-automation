@@ -1359,6 +1359,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url.startsWith('/delete')) {
     const body = await readBody(req)
+    if (COMBO) { log(`ignored /delete (${body.reason || 'qr-saved'}) in combo mode`); send(res, 200, { ok: true, ignored: true }); return }
     const extId = String(body.extId || (EXT && EXT.extBase) || '')
     const uuid = String(body.uuid || '')
     try {
