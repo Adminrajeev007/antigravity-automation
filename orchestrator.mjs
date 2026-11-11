@@ -1403,7 +1403,7 @@ async function main() {
     log(`proxy pool guard: keeping pool at ${TETHER_IP}`)
     apiSetPool([TETHER_IP]).catch(() => {})
     try { setInterval(() => { apiSetPool([TETHER_IP]).catch(() => {}) }, 20000).unref() } catch {}
-  try { setInterval(() => { watchProxyHealth().catch(() => {}) }, 15000).unref() } catch {}
+  if (ROTATE_IP && IP_API_BASE) { try { setInterval(() => { watchProxyHealth().catch(() => {}) }, 15000).unref() } catch {} }
   }
 
   await uploadExtension()
