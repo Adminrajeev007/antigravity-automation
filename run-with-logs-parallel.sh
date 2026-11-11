@@ -46,7 +46,7 @@ ORCH_BATCH="$BATCH" \
 ORCH_MAX_RUNS="$RUNS" \
 ORCH_EMAIL_DOMAIN="$DOMAIN" \
 EXT_ZIP="${EXT_ZIP:-$BUNDLE/gcp-auto-intern-portal-v1.5.7.zip}" \
-nohup ./run.sh > "$RUN/orchestrator.log" 2>&1 &
+nohup ./run-parallel.sh > "$RUN/orchestrator.log" 2>&1 &
 ORCH_PID=$!
 echo "$ORCH_PID" > "$RUN/orchestrator.pid"
 

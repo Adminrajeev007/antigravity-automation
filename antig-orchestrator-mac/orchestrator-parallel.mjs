@@ -1005,7 +1005,11 @@ async function startSession(email) {
   let started
   try {
     started = await startProfile(uuid)
-    const assigned = await assignViaExtensionPage(started.debugPort, started.wsEndpoint, email, uuid)
+    let assigned = null
+    for (let a = 1; a <= 5 && !assigned; a += 1) {
+      try { assigned = await assignViaExtensionPage(started.debugPort, started.wsEndpoint, email, uuid) } catch (e) { log(`assign retry ${a}/5 for ${email}: ${e.message}`); await sleep(1500) }
+    }
+    if (!assigned) log(`assign failed for ${email}; keeping profile for manual/flow`)
     await sleep(500)
     await dedupeFlowTabs(started.debugPort, started.wsEndpoint)
     const sess = {
