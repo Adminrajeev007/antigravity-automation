@@ -797,7 +797,6 @@ async function postSheetComplete(email, token) {
     }
     await sleep(250)
   }
-  log(`sheet complete failed for ${email}: ${last || 'timeout'}`)
   return false
 }
 
@@ -869,7 +868,6 @@ async function flushSheetQueue() {
       }
     }
     try { fs.writeFileSync(SHEET_QUEUE_FILE, keep.length ? keep.map((e) => JSON.stringify(e)).join('\n') + '\n' : '') } catch {}
-    if (saved) log(`sheet queue flushed ${saved} email(s)`)
   } finally {
     sheetFlushBusy = false
   }
@@ -1495,10 +1493,8 @@ async function main() {
     while (Date.now() < deadline && fs.existsSync(SHEET_QUEUE_FILE)) {
       let left = ''
       try { left = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').trim() } catch {}
-      if (!left) { log('backend sheet queue empty'); break }
       await flushSheetQueue().catch(() => {})
       try { left = fs.readFileSync(SHEET_QUEUE_FILE, 'utf8').trim() } catch {}
-      if (!left) { log('backend sheet queue empty'); break }
       const n = left.split('\n').filter(Boolean).length
       await sleep(15000)
     }
