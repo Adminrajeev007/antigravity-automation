@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "GCP Account Prepayment",
+  "version": "1.0.16",
+  "description": "Enter an email and auto-login to Google Cloud using the OTP code service. After login it opens the billing page and makes a fixed Rs.1000 prepayment instead of opening Cloud Shell.",
+  "permissions": [
+    "storage",
+    "cookies",
+    "tabs",
+    "browsingData"
+  ],
+  "optional_permissions": [
+    "contentSettings"
+  ],
+  "host_permissions": [
+    "https://accounts.cloud.google.com/*",
+    "https://accounts.google.com/*",
+    "https://console.cloud.google.com/*",
+    "https://cloud.google.com/*",
+    "https://payments.google.com/*",
+    "https://*.google.com/*",
+    "https://google.com/*",
+    "https://dispose.lol/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GCP Account Prepayment"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://accounts.cloud.google.com/*",
+        "https://accounts.google.com/*",
+        "https://console.cloud.google.com/*",
+        "https://cloud.google.com/*",
+        "https://payments.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

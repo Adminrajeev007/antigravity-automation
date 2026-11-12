@@ -1,0 +1,89 @@
+{
+  "manifest_version": 3,
+  "name": "GCP Combo Portal",
+  "version": "1.0.34",
+  "description": "GCP signup + inline OAuth login combo extension.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "cookies",
+    "alarms",
+    "offscreen",
+    "proxy",
+    "webRequest",
+    "webRequestAuthProvider"
+  ],
+  "host_permissions": [
+    "https://accounts.cloud.google.com/*",
+    "https://console.cloud.google.com/*",
+    "https://payments.google.com/*",
+    "https://cloud.google.com/*",
+    "https://accounts.google.com/*",
+    "https://dispose.lol/*",
+    "<all_urls>",
+    "https://antigravity.google/*",
+    "http://agy-agylb-wu9iuq-1cc4ca-38-46-221-168.sslip.io/*",
+    "http://192.168.31.250:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GCP Combo Portal"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://accounts.google.com/*",
+        "https://accounts.cloud.google.com/*",
+        "https://console.cloud.google.com/*",
+        "https://payments.google.com/*",
+        "https://cloud.google.com/*"
+      ],
+      "js": [
+        "error-watch.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://accounts.cloud.google.com/*",
+        "https://console.cloud.google.com/*",
+        "https://payments.google.com/*",
+        "https://cloud.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "panel.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://console.cloud.google.com/freetrial*"
+      ],
+      "js": [
+        "billing-watch.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://accounts.google.com/*",
+        "https://antigravity.google/*"
+      ],
+      "js": [
+        "combo-oauth-content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

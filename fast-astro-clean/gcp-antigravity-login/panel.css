@@ -1,0 +1,362 @@
+/* GCP AG floating panel */
+
+#gcp-auto-panel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  width: 300px;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 12px;
+  color: #e8e9f0;
+  background: #181a24;
+  border: 1px solid #2a2d3d;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+#gcp-auto-panel * {
+  box-sizing: border-box;
+}
+
+#gcp-auto-panel .gcp-auto-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+#gcp-auto-panel .gcp-auto-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+#gcp-auto-panel .gcp-auto-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3ddc84;
+  box-shadow: 0 0 8px rgba(61, 220, 132, 0.8);
+  flex: 0 0 auto;
+}
+
+#gcp-auto-panel .gcp-auto-head button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+#gcp-auto-panel .gcp-auto-head button:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+#gcp-auto-panel.gcp-auto-collapsed {
+  width: 150px;
+}
+
+#gcp-auto-panel.gcp-auto-collapsed .gcp-auto-body {
+  display: none;
+}
+
+#gcp-auto-panel .gcp-auto-body {
+  padding: 12px;
+}
+
+#gcp-auto-panel .gcp-auto-current {
+  padding: 9px 10px;
+  margin-bottom: 10px;
+  background: #141620;
+  border: 1px solid #232637;
+  border-radius: 10px;
+}
+
+#gcp-auto-panel .gcp-auto-label {
+  margin-bottom: 4px;
+  color: #8b90a8;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+#gcp-auto-panel .gcp-auto-email {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+#gcp-auto-panel .gcp-auto-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+
+#gcp-auto-panel .badge-done,
+#gcp-auto-panel .badge-active,
+#gcp-auto-panel .badge-failed {
+  padding: 3px 7px;
+  border-radius: 20px;
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#gcp-auto-panel .badge-done {
+  background: rgba(61, 220, 132, 0.14);
+  color: #3ddc84;
+}
+
+#gcp-auto-panel .badge-active {
+  background: rgba(255, 193, 84, 0.15);
+  color: #ffc154;
+}
+
+#gcp-auto-panel .badge-failed {
+  background: rgba(255, 122, 122, 0.14);
+  color: #ff7a7a;
+}
+
+#gcp-auto-panel .gcp-auto-total {
+  margin-left: auto;
+  color: #6f748a;
+  font-size: 10px;
+}
+
+#gcp-auto-panel .gcp-auto-statusline {
+  min-height: 18px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid #232637;
+  border-radius: 8px;
+  background: #10111a;
+  color: #b9bed2;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+#gcp-auto-panel .gcp-auto-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+#gcp-auto-panel .gcp-auto-btns.three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+#gcp-auto-panel .gcp-auto-btns:last-child {
+  margin-bottom: 0;
+}
+
+#gcp-auto-panel .gcp-auto-btns button {
+  padding: 7px 8px;
+  border: 1px solid #2d3142;
+  border-radius: 8px;
+  background: #202331;
+  color: #ced2e3;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
+}
+
+#gcp-auto-panel .gcp-auto-btns button:hover {
+  background: #282c3d;
+  border-color: #3a3f55;
+}
+
+#gcp-auto-panel #gcp-auto-fill,
+#gcp-auto-panel #gcp-auto-next {
+  border-color: transparent;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.24);
+}
+
+#gcp-auto-panel #gcp-auto-fill:hover,
+#gcp-auto-panel #gcp-auto-next:hover {
+  filter: brightness(1.07);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+#gcp-auto-panel .gcp-auto-auto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9aa0b8;
+  font-size: 10.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#gcp-auto-panel .gcp-auto-auto input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #667eea;
+  cursor: pointer;
+}
+
+/* OAuth API status card (Antigravity callback page) */
+#gcp-ag-api-status {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483647;
+  width: 270px;
+  padding: 12px;
+  border: 1px solid #2a2d3d;
+  border-radius: 12px;
+  background: #181a24;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8e9f0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 12px;
+}
+
+#gcp-ag-api-status .gcp-ag-api-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#gcp-ag-api-status .gcp-ag-api-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7a7f95;
+  flex: 0 0 auto;
+}
+
+#gcp-ag-api-status.pending {
+  border-color: rgba(255, 193, 84, 0.5);
+}
+
+#gcp-ag-api-status.pending .gcp-ag-api-dot {
+  background: #ffc154;
+  box-shadow: 0 0 8px rgba(255, 193, 84, 0.8);
+}
+
+#gcp-ag-api-status.accepted {
+  border-color: rgba(61, 220, 132, 0.5);
+}
+
+#gcp-ag-api-status.accepted .gcp-ag-api-dot {
+  background: #3ddc84;
+  box-shadow: 0 0 8px rgba(61, 220, 132, 0.8);
+}
+
+#gcp-ag-api-status.rejected {
+  border-color: rgba(255, 122, 122, 0.5);
+}
+
+#gcp-ag-api-status.rejected .gcp-ag-api-dot {
+  background: #ff7a7a;
+  box-shadow: 0 0 8px rgba(255, 122, 122, 0.8);
+}
+
+#gcp-ag-api-status .gcp-ag-api-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+#gcp-ag-api-status .gcp-ag-api-head button {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8b90a8;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#gcp-ag-api-status .gcp-ag-api-head button:hover {
+  color: #e8e9f0;
+}
+
+#gcp-ag-api-status .gcp-ag-api-msg {
+  margin-top: 6px;
+  color: #b9bed2;
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+#gcp-auto-panel .gcp-auto-ip {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.24);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+#gcp-auto-panel .gcp-auto-ip:empty {
+  display: none;
+}
+
+#gcp-auto-panel .gcp-auto-timer {
+  margin-bottom: 9px;
+  padding: 6px 9px;
+  border: 1px solid #2a2d3d;
+  border-radius: 8px;
+  background: #10121a;
+  color: #aab0c8;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+#gcp-auto-panel .gcp-auto-timer.danger {
+  border-color: #7a2d2d;
+  color: #ff8a80;
+  background: #1c1012;
+}
+
+#gcp-auto-panel .gcp-auto-timer.off {
+  opacity: 0.65;
+}
+
+#gcp-ag-api-status .gcp-ag-api-actions {
+  display: none;
+  margin-top: 8px;
+}
+
+#gcp-ag-api-status .gcp-ag-api-actions button {
+  padding: 5px 9px;
+  border: 1px solid rgba(122, 140, 255, 0.55);
+  border-radius: 7px;
+  background: #202338;
+  color: #dfe3ff;
+  font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  cursor: pointer;
+}
+
+#gcp-ag-api-status .gcp-ag-api-actions button:hover {
+  background: #2a2e49;
+}

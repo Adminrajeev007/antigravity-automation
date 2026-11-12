@@ -1,0 +1,6 @@
+startedAt,email,domain,outcome,reason,endedAt
+2026-11-03T11:11:25.757Z,user1@netspry.org,netspry.org,billing,qr-saved,2026-11-03T11:11:25.765Z
+2026-11-03T11:11:25.765Z,user2@devhalo.org,devhalo.org,signup-error,signup-error,2026-11-03T11:11:25.765Z
+2026-11-03T11:11:25.765Z,user3@netspry.org,netspry.org,timeout,timeout,2026-11-03T11:11:25.765Z
+2026-11-03T11:11:25.765Z,user4@devhalo.org,devhalo.org,signup-error,signup-error,2026-11-03T11:11:25.765Z
+2026-11-03T11:11:25.765Z,user5@netspry.org,netspry.org,billing,qr-saved,2026-11-03T11:11:25.765Z

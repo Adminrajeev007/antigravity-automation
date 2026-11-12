@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GCP Antigravity Login</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo">AG</div>
+        <div class="brand-text">
+          <h1>GCP Antigravity Login</h1>
+          <p>Login account &rarr; Antigravity OAuth</p>
+        </div>
+      </div>
+      <span id="runDot" class="run-dot" title="Live mode"></span>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>API</h2>
+        <p class="hint">API key is embedded in the extension. Used automatically for OAuth start and callback.</p>
+        <p id="oauthStartStatus" class="hint">No OAuth link fetched yet.</p>
+        <p class="hint">Last failed API response:</p>
+        <pre id="lastApiResponse" class="code-box last-api-response">No API failure yet.</pre>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Proxy</h2>
+          <div class="proxy-head-right">
+            <span id="proxyState" class="proxy-state off">Off</span>
+            <label class="switch" title="Enable proxy">
+              <input id="proxyEnabled" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="field">
+          <label for="proxyCustomUrl">Proxy URL</label>
+          <input id="proxyCustomUrl" type="text" value="http://testuser:testpass@192.168.31.250:1080" placeholder="http://user:pass@host:1080" spellcheck="false" />
+        </div>
+        <p class="hint">Proxy is off by default. Supports http://, https://, socks4:// and socks5://.</p>
+        <div class="actions">
+          <button id="applyProxyBtn" class="btn primary">Apply proxy</button>
+          <span id="proxyStatus" class="status-text">&mdash;</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Login accounts</h2>
+        <div class="field">
+          <label for="loginEmails">Existing emails (one per line)</label>
+          <textarea id="loginEmails" rows="6" placeholder="user1@domain.com&#10;user2@domain.com"></textarea>
+        </div>
+        <div class="actions">
+          <button id="saveEmailsBtn" class="btn ghost">Save list</button>
+        </div>
+        <p id="sheetSyncStatus" class="hint">Sheet sync: waiting...</p>
+        <div class="field">
+          <label for="emailOrder">Email order</label>
+          <select id="emailOrder">
+            <option value="desc">Latest to oldest (newest first)</option>
+            <option value="asc">Oldest to latest</option>
+          </select>
+        </div>
+        <p class="hint">Completed emails are skipped. Default: latest to oldest.</p>
+        <div class="field">
+          <label for="stuckMinutes">Stuck timer (minutes)</label>
+          <input id="stuckMinutes" type="number" min="0.5" max="60" step="0.5" value="2.5" />
+        </div>
+        <div id="accountTimer" class="account-timer">Stuck timer: stopped</div>
+        <p class="hint">Resets on every page/UI progress. It only fires when the flow is stuck.</p>
+        <div class="actions">
+          <button id="startBtn" class="btn primary full">Stop live</button>
+        </div>
+        <div class="actions wrap">
+          <button id="restartBtn" class="btn ghost">Restart flow</button>
+          <button id="resetFlowBtn" class="btn danger">Reset extension</button>
+        </div>
+        <p class="hint">Existing accounts only. Logs in with email + code, opens OAuth, selects the logged-in account, and submits the code.</p>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Progress</h2>
+          <div id="stats" class="chips"></div>
+        </div>
+        <div class="progress"><div id="progressBar" class="progress-fill"></div></div>
+        <div class="actions wrap">
+          <button id="oauthBtn" class="btn primary">Open OAuth</button>
+          <button id="skipCurrentBtn" class="btn ghost">Skip current</button>
+        </div>
+        <div class="actions wrap">
+          <button id="clearCookiesBtn" class="btn ghost">Clear cookies</button>
+          <button id="signoutBtn" class="btn ghost">Sign out</button>
+        </div>
+        <div class="actions wrap">
+          <button id="clearBtn" class="btn danger span2">Clear all</button>
+        </div>
+        <ul id="list" class="list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Ignored emails</h2>
+        <p class="hint">Check <b>Ignore</b> on any account above, or add emails here. Ignored emails are never synced, claimed, or logged in.</p>
+        <div class="field">
+          <label for="ignoredEmails">Ignored (one per line)</label>
+          <textarea id="ignoredEmails" rows="4" placeholder="verify@cyberstrive.org&#10;passed-check@cyberstrive.org"></textarea>
+        </div>
+        <div class="actions">
+          <button id="saveIgnoredBtn" class="btn ghost">Save ignored</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Completed accounts</h2>
+          <div class="code-actions">
+            <button id="copySuccessBtn" class="btn ghost">Copy</button>
+          </div>
+        </div>
+        <div id="successList" class="code-box success-list">No successful accounts yet.</div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Last OAuth code</h2>
+          <div class="code-actions">
+            <button id="sendCodeBtn" class="btn ghost">Send</button>
+            <button id="copyCodeBtn" class="btn ghost">Copy</button>
+          </div>
+        </div>
+        <div id="lastCode" class="code-box">No code yet.</div>
+        <p id="lastCodeMeta" class="hint"></p>
+        <p id="apiStatus" class="api-status"></p>
+      </section>
+
+      <section class="card">
+        <h2>Automation</h2>
+        <label class="toggle-row">
+          <span>Fast mode <small>less human-like</small></span>
+          <span class="switch">
+            <input id="fastMode" type="checkbox" />
+            <span class="slider"></span>
+          </span>
+        </label>
+      </section>
+    </main>
+
+    <footer>Email + OTP login &middot; OAuth account is auto-selected</footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,45 @@
+{
+  "updatedAt": "2026-11-03T11:11:25.767Z",
+  "attempts": {
+    "u:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+      "email": "user1@netspry.org",
+      "domain": "netspry.org",
+      "startedAt": "2026-11-03T11:11:25.757Z",
+      "outcome": "billing",
+      "reason": "qr-saved",
+      "endedAt": "2026-11-03T11:11:25.765Z"
+    },
+    "u:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+      "email": "user2@devhalo.org",
+      "domain": "devhalo.org",
+      "startedAt": "2026-11-03T11:11:25.765Z",
+      "outcome": "signup-error",
+      "reason": "signup-error",
+      "endedAt": "2026-11-03T11:11:25.765Z"
+    },
+    "u:cccccccccccccccccccccccccccccccc": {
+      "email": "user3@netspry.org",
+      "domain": "netspry.org",
+      "startedAt": "2026-11-03T11:11:25.765Z",
+      "outcome": "timeout",
+      "reason": "timeout",
+      "endedAt": "2026-11-03T11:11:25.765Z"
+    },
+    "u:dddddddddddddddddddddddddddddddd": {
+      "email": "user4@devhalo.org",
+      "domain": "devhalo.org",
+      "startedAt": "2026-11-03T11:11:25.765Z",
+      "outcome": "signup-error",
+      "reason": "signup-error",
+      "endedAt": "2026-11-03T11:11:25.765Z"
+    },
+    "u:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
+      "email": "user5@netspry.org",
+      "domain": "netspry.org",
+      "startedAt": "2026-11-03T11:11:25.765Z",
+      "outcome": "billing",
+      "reason": "qr-saved",
+      "endedAt": "2026-11-03T11:11:25.765Z"
+    }
+  }
+}

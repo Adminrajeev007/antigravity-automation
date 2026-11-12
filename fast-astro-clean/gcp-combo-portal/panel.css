@@ -1,0 +1,209 @@
+/* GCP Auto Panel - Always visible, dark, modern UI */
+#gcp-auto-panel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  width: 320px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: #e0e0e0;
+  background: #1a1a2e;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(102, 126, 234, 0.15);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+#gcp-auto-panel * {
+  box-sizing: border-box;
+}
+
+#gcp-auto-panel .gcp-auto-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+  cursor: move;
+  user-select: none;
+}
+
+#gcp-auto-panel .gcp-auto-head button {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+#gcp-auto-panel .gcp-auto-head button:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+#gcp-auto-panel.gcp-auto-collapsed {
+  width: 200px;
+}
+
+#gcp-auto-panel.gcp-auto-collapsed .gcp-auto-body {
+  display: none;
+}
+
+#gcp-auto-panel .gcp-auto-body {
+  padding: 12px 14px 14px;
+}
+
+#gcp-auto-panel .gcp-auto-current {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: rgba(102, 126, 234, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.15);
+}
+
+#gcp-auto-panel .gcp-auto-label {
+  font-size: 10px;
+  color: #8899aa;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+#gcp-auto-panel .gcp-auto-email {
+  font-weight: 600;
+  font-size: 12px;
+  word-break: break-all;
+  margin: 2px 0 4px;
+  color: #fff;
+}
+
+#gcp-auto-panel .gcp-auto-addr {
+  font-size: 11px;
+  color: #7f8c8d;
+  word-break: break-all;
+  margin: 0;
+  line-height: 1.3;
+}
+
+#gcp-auto-panel .gcp-auto-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #27ae60;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+#gcp-auto-panel .gcp-auto-statusline {
+  background: rgba(16, 16, 32, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #bdc3c7;
+  margin-bottom: 10px;
+  min-height: 18px;
+  line-height: 1.4;
+}
+
+#gcp-auto-panel .gcp-auto-btns {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+#gcp-auto-panel .gcp-auto-btns button {
+  flex: 1;
+  padding: 7px 8px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 6px;
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+#gcp-auto-panel .gcp-auto-btns button:hover {
+  background: rgba(102, 126, 234, 0.2);
+  border-color: rgba(102, 126, 234, 0.5);
+  color: #fff;
+}
+
+#gcp-auto-panel .gcp-auto-auto {
+  flex: 1;
+  font-size: 11px;
+  color: #bdc3c7;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+#gcp-auto-panel .gcp-auto-auto input[type="checkbox"] {
+  accent-color: #667eea;
+  width: 14px;
+  height: 14px;
+}
+
+/* QR preview inside panel */
+#gcp-auto-panel .gcp-auto-qr {
+  margin-top: 8px;
+  text-align: center;
+  padding: 8px;
+  background: #fff;
+  border-radius: 8px;
+}
+
+#gcp-auto-panel .gcp-auto-qr img {
+  max-width: 140px;
+  height: auto;
+  border-radius: 4px;
+}
+
+#gcp-auto-panel .gcp-auto-qr-label {
+  font-size: 10px;
+  color: #27ae60;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Badge styles */
+#gcp-auto-panel .badge-done {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(39, 174, 96, 0.15);
+  color: #27ae60;
+}
+
+#gcp-auto-panel .badge-active {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(241, 196, 15, 0.15);
+  color: #f1c40f;
+}

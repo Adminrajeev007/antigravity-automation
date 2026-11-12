@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "GCP Auto Intern Portal",
+  "version": "1.5.2",
+  "description": "Semi-automates GCP free-trial signup. Fleet mode: remote control + QR/status reporting to your dashboard.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "cookies",
+    "alarms",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://accounts.cloud.google.com/*",
+    "https://console.cloud.google.com/*",
+    "https://payments.google.com/*",
+    "https://cloud.google.com/*",
+    "https://accounts.google.com/*",
+    "https://dispose.lol/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GCP Auto Intern Portal"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://accounts.google.com/*",
+        "https://accounts.cloud.google.com/*",
+        "https://console.cloud.google.com/*",
+        "https://payments.google.com/*",
+        "https://cloud.google.com/*"
+      ],
+      "js": [
+        "error-watch.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://accounts.cloud.google.com/*",
+        "https://console.cloud.google.com/*",
+        "https://payments.google.com/*",
+        "https://cloud.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "panel.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://console.cloud.google.com/freetrial*"
+      ],
+      "js": [
+        "billing-watch.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

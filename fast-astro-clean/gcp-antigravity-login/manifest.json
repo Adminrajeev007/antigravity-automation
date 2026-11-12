@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "GCP Antigravity Login",
+  "version": "2.9.39",
+  "description": "Logs in to existing Google accounts, opens Antigravity OAuth, selects the logged-in account, and submits the captured code.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "cookies",
+    "browsingData",
+    "proxy",
+    "webRequest",
+    "webRequestAuthProvider",
+    "alarms"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GCP Antigravity Login"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://accounts.cloud.google.com/*",
+        "https://console.cloud.google.com/*",
+        "https://accounts.google.com/*",
+        "https://antigravity.google/*",
+        "https://www.antigravity.google/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "panel.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "ip-badge.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
