@@ -987,7 +987,7 @@ async function tileWindow(debugPort, tileIndex) {
 }
 
 function hidClick(x, y) {
-  const out = execFileSync('python3', [HID_CLICK_PY, 'click', String(Math.round(x)), String(Math.round(y))], {
+  const out = execFileSync(process.env.ORCH_HID_PYTHON || 'python3', [HID_CLICK_PY, 'click', String(Math.round(x)), String(Math.round(y))], {
     timeout: 15000,
     encoding: 'utf8',
   })

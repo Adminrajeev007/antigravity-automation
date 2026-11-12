@@ -37,3 +37,5 @@ antig-orchestrator-mac/gcp-auto-intern-portal-v1.5.*.zip
 
 
 proxy.local.json
+
+.venv/
