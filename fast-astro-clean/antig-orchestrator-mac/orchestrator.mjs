@@ -1324,6 +1324,31 @@ async function processTosQueueItem(sess) {
   log(`TOS queue: gave up on ${sess.email}`)
 }
 
+async function checkStuckEmptyPage(sess, list) {
+  if (!sess || sess.tosDone || sess.tosQueued) return;
+  if (Date.now() - (sess.lastEmptyReloadAt || 0) < 15000) return;
+  const pages = (list || []).filter((t) =>
+    t.type === 'page' && t.webSocketDebuggerUrl &&
+    /^https?:\/\/([^/]*\.)?(accounts\.google\.com|accounts\.cloud\.google\.com|console\.cloud\.google\.com|payments\.google\.com|cloud\.google\.com|antigravity\.google)\//i.test(String(t.url || '')))
+  if (!pages.length) { sess.emptyStrikes = 0; return }
+  let emptyTarget = null
+  let emptyUrl = null
+  for (const p of pages) {
+    let info = null
+    try {
+      info = await cdpEvaluate(p.webSocketDebuggerUrl, `({ ready: document.readyState, len: ((document.body && document.body.innerText) || "").trim().length, url: location.href })`, 5000)
+    } catch (e) { continue }
+    if (info && info.ready === 'complete' && info.len < 20) { emptyTarget = p; emptyUrl = info.url; break }
+  }
+  if (!emptyTarget) { sess.emptyStrikes = 0; return }
+  sess.emptyStrikes = (sess.emptyStrikes || 0) + 1
+  if (sess.emptyStrikes < 3) return // ~15s stuck
+  log(`empty page for ${sess.email} (${emptyUrl}) and not loading; reloading`)
+  try { await cdpCall(emptyTarget.webSocketDebuggerUrl, 'Page.reload', { ignoreCache: true }, 8000) } catch (e) {}
+  sess.emptyStrikes = 0
+  sess.lastEmptyReloadAt = Date.now()
+}
+
 async function checkSignupError(sess) {
   try {
     const active = await octo('GET', '/api/profiles/active')
@@ -1345,6 +1370,7 @@ async function checkSignupError(sess) {
   try {
     const list = await fetch(`http://127.0.0.1:${sess.debugPort}/json/list`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json())
     if (COMBO) trustedTosTick(sess, list).catch(() => {})
+    checkStuckEmptyPage(sess, list).catch(() => {})
     let billing = (list || []).some((t) => {
       const u = String(t.url || '').toLowerCase()
       return u.includes('/freetrial/signup/billing/') || (u.includes('console.cloud.google.com/freetrial') && u.includes('billing'))
