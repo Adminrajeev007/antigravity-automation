@@ -546,6 +546,66 @@ async function handleOtp(state) {
   } finally { running = false; }
 }
 
+let otpResendCount = 0;
+let blockingErrAt = 0;
+
+// Recovers from OTP/verification dead-ends:
+//  - "Email couldn't be verified / something went wrong" -> clear the stale
+//    code, click "Resend code" (then reload, then restart) so a fresh code
+//    can be fetched and verified again.
+//  - "The server cannot process the request... Sign up or sign in again" ->
+//    click "Sign up or sign in" to restart the flow.
+async function handleBlockingErrors() {
+  if (!IS_TOP || running || stopped) return;
+  if (Date.now() - blockingErrAt < 3500) return;
+  const txt = ((document.body && document.body.innerText) || "").toLowerCase();
+  if (!txt) return;
+
+  if (txt.includes("server cannot process the request") || txt.includes("sign up or sign in again")) {
+    const restart = findByText("Sign up or sign in") || findByText("Sign up or sign in again");
+    if (restart) {
+      blockingErrAt = Date.now();
+      setStatus("Server error — clicking 'Sign up or sign in' to restart...");
+      await randDelay(600, 1200);
+      await humanClick(restart);
+      return;
+    }
+  }
+
+  const otpErr = txt.includes("couldn't be verified") || txt.includes("could not be verified") ||
+                 (txt.includes("something went wrong") && (txt.includes("resend") || txt.includes("code")));
+  if (!otpErr) return;
+
+  blockingErrAt = Date.now();
+  otpFilled = false; otpFilledFor = -1;
+  try {
+    const pin = document.querySelector('input[name="pinInput"]');
+    if (pin) { pin.value = ""; pin.dispatchEvent(new Event("input", { bubbles: true })); }
+  } catch (e) {}
+
+  const resend = findByText("Resend code") || findByText("Resend");
+  if (resend && otpResendCount < 2) {
+    otpResendCount += 1;
+    setStatus("OTP failed — clicking 'Resend code' (" + otpResendCount + "/2)...");
+    await randDelay(600, 1200);
+    await humanClick(resend);
+    await randDelay(2500, 4000);
+    runForCurrentPage(false).catch(() => {});
+    return;
+  }
+
+  if (otpResendCount < 4) {
+    otpResendCount += 1;
+    setStatus("OTP still failing — refreshing page for a fresh code...");
+    await randDelay(600, 1200);
+    location.reload();
+    return;
+  }
+
+  const restart = findByText("Sign up or sign in") || findByText("Sign up or sign in again");
+  if (restart) { await randDelay(600, 1200); await humanClick(restart); }
+}
+
 async function handleTos(state) {
   // TOS clicking is driven from the orchestrator with trusted CDP input
   // (real user-activation events). Here we only surface status.
@@ -1691,8 +1751,11 @@ function resetFrameFlags() { stateSelected = false; savedOnce = false; addAddrCl
 let lastUrl = location.href;
 timers.push(setInterval(() => {
   if (!extAlive()) { stopAll(); return; }
-  if (location.href !== lastUrl) { lastUrl = location.href; setTimeout(() => { runForCurrentPage(false); renderPanel(); }, 2500); }
+  if (location.href !== lastUrl) { lastUrl = location.href; otpResendCount = 0; setTimeout(() => { runForCurrentPage(false); renderPanel(); }, 2500); }
 }, 1500));
+
+// Watch for OTP/verification dead-ends and recover (resend / restart).
+timers.push(setInterval(() => { handleBlockingErrors().catch(() => {}); }, 3000));
 
 // Payment frames: fast QR/failure watcher (1.2s) — independent of the slow
 // address-fill loop, so a retried QR replaces the old one in the panel instantly.

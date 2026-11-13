@@ -22,12 +22,14 @@ sleep 1
 ORCH_BATCH="${ORCH_BATCH:-3}" \
 ORCH_MAX_RUNS="${ORCH_MAX_RUNS:-0}" \
 ORCH_RESET_PROFILES="${ORCH_RESET_PROFILES:-1}" \
-ORCH_ROTATE_IP=0 \
+ORCH_ROTATE_IP="${ORCH_ROTATE_IP:-1}" \
+ORCH_ROTATE_URL="${ORCH_ROTATE_URL:-http://rotate.local}" \
 ANTIG_PROXY_CONFIG="$DIR/proxy.astro.json" \
 ORCH_PROXY_CONFIG="$DIR/proxy.astro.json" \
 ORCH_BATCH_TIMEOUT_MS="${ORCH_BATCH_TIMEOUT_MS:-1500000}" \
+ORCH_BATCH_COOLDOWN_MS="${ORCH_BATCH_COOLDOWN_MS:-10000}" \
 ORCH_COMBO=1 \
-EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.38.zip" \
+EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.40.zip" \
   "$DIR/run-with-logs-astro.sh"
 
 RUN="$(ls -td "$ROOT"/run-* 2>/dev/null | head -1)"
