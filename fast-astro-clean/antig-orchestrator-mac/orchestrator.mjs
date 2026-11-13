@@ -1514,28 +1514,39 @@ function fixUsbTether(attempt = 1) {
   }
 }
 
+let ipRotateUnavailableUntil = 0
+
 async function proxyToggleIp(beforeIp) {
   const before = beforeIp || proxyEgress() || 'unknown'
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    log(`IP toggle attempt ${attempt}/3 via ${ROTATE_URL}`)
-    try {
-      curlText(['--proxy', PROXY_URL, ROTATE_URL], 90000)
-    } catch (e) {
-      log(`IP toggle request failed: ${e.message}`)
-    }
-    const deadline = Date.now() + Math.min(IP_POLL_TIMEOUT_MS, 90000)
-    while (Date.now() < deadline) {
-      await sleep(Math.max(2000, IP_POLL_INTERVAL_MS))
-      const now = proxyEgress(15000)
-      if (now && now !== before) {
-        log(`IP toggled: ${before} -> ${now}`)
-        return { before, after: now, network: { internet: true, egressIp: now, proxy: true } }
-      }
-    }
-    log(`IP unchanged after attempt ${attempt} (${before})`)
+  if (Date.now() < ipRotateUnavailableUntil) {
+    log(`IP toggle skipped (rotate unavailable, keeping ${before}); next retry in ${Math.round((ipRotateUnavailableUntil - Date.now()) / 1000)}s`)
+    return { before, after: before, network: { internet: true, egressIp: before, proxy: true } }
   }
-  log(`IP toggle failed; keeping ${before}`)
-  return { before, after: before, network: { internet: true, egressIp: before, proxy: true } }
+  log(`IP toggle via ${ROTATE_URL} (current ${before})`)
+  let rotateFailed = false
+  try {
+    curlText(['--proxy', PROXY_URL, ROTATE_URL], 35000)
+  } catch (e) {
+    rotateFailed = true
+    log(`IP toggle request failed: ${e.message}`)
+  }
+  const deadline = Date.now() + 25000
+  while (Date.now() < deadline) {
+    await sleep(Math.min(4000, Math.max(2000, IP_POLL_INTERVAL_MS)))
+    const now = proxyEgress(10000)
+    if (now && now !== before) {
+      log(`IP toggled: ${before} -> ${now}`)
+      return { before, after: now, network: { internet: true, egressIp: now, proxy: true } }
+    }
+  }
+  if (rotateFailed) {
+    // Don't stall every profile on a broken rotate endpoint.
+    ipRotateUnavailableUntil = Date.now() + 5 * 60 * 1000
+    log('IP toggle unavailable; pausing rotate attempts for 5 min')
+  }
+  const now = proxyEgress(10000) || before
+  log(`IP unchanged after toggle (${now}); continuing with current IP`)
+  return { before, after: now, network: { internet: true, egressIp: now, proxy: true } }
 }
 
 async function rotateProxyIp(beforeIp) {
