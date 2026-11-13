@@ -550,6 +550,7 @@ async function handleOtp(state) {
 
 let otpResendCount = 0;
 let otpExpiredResends = 0;
+let otpResentOnce = false;
 let blockingErrAt = 0;
 
 // Recovers from OTP/verification dead-ends:
@@ -575,35 +576,16 @@ async function handleBlockingErrors() {
     }
   }
 
-  // "This code has expired. Resend a new code." -> clear it, resend once, and
-  // re-run handleOtp so it keeps polling dispose.lol every ~5s and uses the
-  // newest code (or the latest available one).
+  // OTP problems: "This code has expired" / "couldn't be verified" /
+  // "something went wrong ... resend". First failure -> resend ONE fresh code.
+  // If the second code is also rejected -> refresh the page (up to 3), then
+  // restart the flow.
   const otpExpired = txt.includes("code has expired") ||
                      (txt.includes("expired") && txt.includes("resend"));
-  if (otpExpired) {
-    blockingErrAt = Date.now();
-    otpFilled = false; otpFilledFor = -1;
-    try {
-      const pin = document.querySelector('input[name="pinInput"]');
-      if (pin) { pin.value = ""; pin.dispatchEvent(new Event("input", { bubbles: true })); }
-    } catch (e) {}
-    const resend = findByText("Resend code") || findByText("Resend");
-    if (resend && otpExpiredResends < 1) {
-      otpExpiredResends += 1;
-      setStatus("OTP expired — resending a new code...");
-      await randDelay(600, 1200);
-      await humanClick(resend);
-      await randDelay(4000, 6000);
-    } else {
-      setStatus("OTP expired — fetching the latest code from the inbox...");
-    }
-    runForCurrentPage(false).catch(() => {});
-    return;
-  }
-
-  const otpErr = txt.includes("couldn't be verified") || txt.includes("could not be verified") ||
-                 (txt.includes("something went wrong") && (txt.includes("resend") || txt.includes("code")));
-  if (!otpErr) return;
+  const otpProblem = otpExpired || txt.includes("couldn't be verified") ||
+                     txt.includes("could not be verified") ||
+                     (txt.includes("something went wrong") && (txt.includes("resend") || txt.includes("code")));
+  if (!otpProblem) return;
 
   blockingErrAt = Date.now();
   otpFilled = false; otpFilledFor = -1;
@@ -612,27 +594,31 @@ async function handleBlockingErrors() {
     if (pin) { pin.value = ""; pin.dispatchEvent(new Event("input", { bubbles: true })); }
   } catch (e) {}
 
-  const resend = findByText("Resend code") || findByText("Resend");
-  if (resend && otpResendCount < 2) {
-    otpResendCount += 1;
-    setStatus("OTP failed — clicking 'Resend code' (" + otpResendCount + "/2)...");
-    await randDelay(600, 1200);
-    await humanClick(resend);
-    await randDelay(2500, 4000);
-    runForCurrentPage(false).catch(() => {});
-    return;
+  if (!otpResentOnce) {
+    const resend = findByText("Resend code") || findByText("Resend");
+    if (resend) {
+      otpResentOnce = true;
+      setStatus("OTP failed — resending one fresh code...");
+      await randDelay(500, 1000);
+      await humanClick(resend);
+      await randDelay(2000, 3500);
+      runForCurrentPage(false).catch(() => {});
+      return;
+    }
   }
 
-  if (otpResendCount < 4) {
-    otpResendCount += 1;
-    setStatus("OTP still failing — refreshing page for a fresh code...");
-    await randDelay(600, 1200);
+  let reloads = 0;
+  try { reloads = Number(sessionStorage.getItem("gcpOtpReloads") || "0"); } catch (e) {}
+  reloads += 1;
+  try { sessionStorage.setItem("gcpOtpReloads", String(reloads)); } catch (e) {}
+  if (reloads <= 3) {
+    setStatus("Second OTP rejected — refreshing page (" + reloads + "/3)...");
+    await randDelay(500, 1000);
     location.reload();
     return;
   }
-
   const restart = findByText("Sign up or sign in") || findByText("Sign up or sign in again");
-  if (restart) { await randDelay(600, 1200); await humanClick(restart); }
+  if (restart) { await randDelay(500, 1000); await humanClick(restart); }
 }
 
 async function handleTos(state) {
@@ -1780,7 +1766,7 @@ function resetFrameFlags() { stateSelected = false; savedOnce = false; addAddrCl
 let lastUrl = location.href;
 timers.push(setInterval(() => {
   if (!extAlive()) { stopAll(); return; }
-  if (location.href !== lastUrl) { lastUrl = location.href; otpResendCount = 0; otpExpiredResends = 0; setTimeout(() => { runForCurrentPage(false); renderPanel(); }, 2500); }
+  if (location.href !== lastUrl) { lastUrl = location.href; otpResendCount = 0; otpExpiredResends = 0; otpResentOnce = false; try { sessionStorage.removeItem('gcpOtpReloads'); } catch (e) {} setTimeout(() => { runForCurrentPage(false); renderPanel(); }, 2500); }
 }, 1500));
 
 // Watch for OTP/verification dead-ends and recover (resend / restart).
