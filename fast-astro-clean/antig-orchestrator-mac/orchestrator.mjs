@@ -107,8 +107,6 @@ const MAX_RUNS = Number(process.env.ORCH_MAX_RUNS || 0)
 const BATCH_SIZE = Math.max(1, Number(process.env.ORCH_BATCH || 2))
 const BATCH_TIMEOUT_MS = Math.max(0, Number(process.env.ORCH_BATCH_TIMEOUT_MS || 0))
 const BATCH_COOLDOWN_MS = Math.max(0, Number(process.env.ORCH_BATCH_COOLDOWN_MS || 30000))
-// IP used when the last profile was launched; used to detect auto-rotation.
-let lastProfileIp = null
 const EXT_BASE_ENV = process.env.ORCH_EXT_ID || ''
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -1540,36 +1538,6 @@ async function proxyToggleIp(beforeIp) {
   return { before, after: before, network: { internet: true, egressIp: before, proxy: true } }
 }
 
-async function currentEgressIp() {
-  try {
-    if (PROXY_MODE || ROTATE_USB) return proxyEgress()
-    return (await hostNetwork()).egressIp
-  } catch {
-    return null
-  }
-}
-
-async function ensureFreshIpForProfile(email) {
-  if (!(ROTATE_IP || ROTATE_USB)) return
-  const cur = await currentEgressIp()
-  // The rotating pool often changes IP on its own; if it already moved since the
-  // last profile, don't rotate again — just use the fresh IP.
-  if (lastProfileIp && cur && cur !== lastProfileIp) {
-    log(`IP for ${email}: already ${cur} (auto-rotated); no toggle needed`)
-    lastProfileIp = cur
-    return
-  }
-  try {
-    const cyc = await cycleIp(cur)
-    const after = cyc && cyc.after
-    if (after) lastProfileIp = after
-    log(`IP for ${email}: ${(cyc && cyc.before) || cur || 'unknown'} -> ${after || cur || 'unknown'} (${PROXY_MODE ? 'proxy' : 'USB tether'})`)
-  } catch (e) {
-    log(`IP toggle before ${email} failed: ${e.message}`)
-    if (cur) lastProfileIp = cur
-  }
-}
-
 async function rotateProxyIp(beforeIp) {
   const before = beforeIp || (await proxyEgress()) || (apiIp()?.ip) || 'unknown'
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -1816,7 +1784,6 @@ async function main() {
 
   try {
     const initial = await ensureTether()
-    if (initial && initial.egressIp) lastProfileIp = initial.egressIp
     if (PROXY_MODE) log(`proxy ready ${proxyLabel()}; egress ${initial.egressIp}`)
     else log(`android ready; usb tether connected, egress ${initial.egressIp}`)
   } catch (e) {
@@ -1824,6 +1791,7 @@ async function main() {
   }
 
   let batch = 0
+  let lastProfileIp = ''
   while (MAX_RUNS === 0 || batch < MAX_RUNS) {
     batch += 1
     log(`===== batch ${batch}${MAX_RUNS ? '/' + MAX_RUNS : ''} (${BATCH_SIZE} profile${BATCH_SIZE > 1 ? 's' : ''}) =====`)
@@ -1840,8 +1808,24 @@ async function main() {
 
       const started = []
       for (const email of emails) {
-        // Fresh IP before EVERY profile — but skip if the pool already rotated.
-        await ensureFreshIpForProfile(email)
+        // Fresh IP before every profile, but don't retoggle if the proxy already
+        // rotated the IP on its own since the last profile.
+        if (ROTATE_IP || ROTATE_USB) {
+          try {
+            const current = PROXY_MODE ? (await proxyEgress()) : null
+            const prev = lastProfileIp
+            if (PROXY_MODE && prev && current && current !== prev) {
+              log(`IP already rotated ${prev} -> ${current}; skipping toggle before ${email}`)
+              lastProfileIp = current
+            } else {
+              const cyc = await cycleIp(current || undefined)
+              lastProfileIp = (cyc && cyc.after) || current || lastProfileIp
+              if (cyc && cyc.after) log(`IP for ${email}: ${cyc.before} -> ${cyc.after} (${PROXY_MODE ? 'proxy' : 'USB tether'})`)
+            }
+          } catch (e) {
+            log(`IP toggle before ${email} failed: ${e.message}`)
+          }
+        }
         let ok = false
         for (let attempt = 1; attempt <= 4 && !ok; attempt += 1) {
           try {
