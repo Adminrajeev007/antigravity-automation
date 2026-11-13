@@ -63,21 +63,13 @@ if (-not $nodeExe) {
 
     Write-Host "downloading Node.js (one time)..."
     if ($curlExe) {
-      # 1) curl direct (with retries)
+      # curl direct (never through the slow proxy), with retries
       try {
         & $curlExe -L --retry 3 --retry-delay 2 --connect-timeout 20 -o $zip $url
         if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 10MB)) { $ok = $true }
       } catch {}
-      # 2) curl through the local proxy (in case direct is blocked)
-      if (-not $ok) {
-        Write-Host "direct download failed; trying through the local proxy..."
-        try {
-          & $curlExe -L --retry 2 --connect-timeout 20 -x "http://testuser:testpass@127.0.0.1:1080" -o $zip $url
-          if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 10MB)) { $ok = $true }
-        } catch {}
-      }
     }
-    # 3) PowerShell fallback with TLS 1.2
+    # PowerShell fallback with TLS 1.2
     if (-not $ok) {
       try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
