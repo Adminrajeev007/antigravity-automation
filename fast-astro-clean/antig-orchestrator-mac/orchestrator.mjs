@@ -120,7 +120,7 @@ const SHEET_WEBAPP_URL = process.env.SHEET_WEBAPP_URL || 'https://script.google.
 const SHEET_TOKEN = process.env.SHEET_TOKEN || 'change-this-sheet-token'
 const MAX_RUNS = Number(process.env.ORCH_MAX_RUNS || 0)
 const BATCH_SIZE = Math.max(1, Number(process.env.ORCH_BATCH || 2))
-const BATCH_TIMEOUT_MS = Math.max(0, Number(process.env.ORCH_BATCH_TIMEOUT_MS || 0))
+const BATCH_TIMEOUT_MS = Math.max(0, Number(process.env.ORCH_BATCH_TIMEOUT_MS || 480000))
 const BATCH_COOLDOWN_MS = Math.max(0, Number(process.env.ORCH_BATCH_COOLDOWN_MS || 30000))
 const EXT_BASE_ENV = process.env.ORCH_EXT_ID || ''
 
