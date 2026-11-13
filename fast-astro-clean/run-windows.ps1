@@ -45,13 +45,54 @@ $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
 $nodeExe = $null
 if ($nodeCmd) { $nodeExe = $nodeCmd.Source }
 if (-not $nodeExe) {
+  $pf = Join-Path $env:ProgramFiles "nodejs\node.exe"
+  if (Test-Path $pf) { $nodeExe = $pf }
+}
+if (-not $nodeExe) {
   $nodeDir = Join-Path $Root "runtime\node-win"
   $nodeExe = Join-Path $nodeDir "node.exe"
   if (-not (Test-Path $nodeExe)) {
-    Write-Host "downloading Node.js (one time)..."
     $ver = "v20.19.0"
     $zip = Join-Path $env:TEMP "node-$ver-win-x64.zip"
-    Invoke-WebRequest -UseBasicParsing -Uri "https://nodejs.org/dist/$ver/node-$ver-win-x64.zip" -OutFile $zip
+    $url = "https://nodejs.org/dist/$ver/node-$ver-win-x64.zip"
+    if (Test-Path $zip) { Remove-Item -Force $zip }
+    $ok = $false
+    $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
+    $curlExe = $null
+    if ($curlCmd) { $curlExe = $curlCmd.Source }
+
+    Write-Host "downloading Node.js (one time)..."
+    if ($curlExe) {
+      # 1) curl direct (with retries)
+      try {
+        & $curlExe -L --retry 3 --retry-delay 2 --connect-timeout 20 -o $zip $url
+        if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 10MB)) { $ok = $true }
+      } catch {}
+      # 2) curl through the local proxy (in case direct is blocked)
+      if (-not $ok) {
+        Write-Host "direct download failed; trying through the local proxy..."
+        try {
+          & $curlExe -L --retry 2 --connect-timeout 20 -x "http://testuser:testpass@127.0.0.1:1080" -o $zip $url
+          if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 10MB)) { $ok = $true }
+        } catch {}
+      }
+    }
+    # 3) PowerShell fallback with TLS 1.2
+    if (-not $ok) {
+      try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+        if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 10MB)) { $ok = $true }
+      } catch {}
+    }
+    if (-not $ok) {
+      Write-Host ""
+      Write-Host "ERROR: could not download Node.js on this machine." -ForegroundColor Red
+      Write-Host "Install Node.js LTS manually, then re-run:" -ForegroundColor Yellow
+      Write-Host "  - download: https://nodejs.org/en/download" -ForegroundColor Yellow
+      Write-Host "  - or (if winget exists):  winget install OpenJS.NodeJS.LTS" -ForegroundColor Yellow
+      exit 1
+    }
     if (Test-Path $nodeDir) { Remove-Item -Recurse -Force $nodeDir }
     New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
     Expand-Archive -Path $zip -DestinationPath $nodeDir -Force
