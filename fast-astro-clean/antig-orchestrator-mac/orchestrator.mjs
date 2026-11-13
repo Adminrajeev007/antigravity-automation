@@ -1263,7 +1263,6 @@ async function runTosQueue() {
 async function processTosQueueItem(sess) {
   const token = 'AGT' + String(sess.uuid || '').slice(0, 10).replace(/[^A-Za-z0-9]/g, '')
   log(`TOS queue: switching to ${sess.email}`)
-  if (!sess.tosIp) { try { sess.tosIp = await proxyEgress(10000) } catch (e) {} }
   for (let step = 0; step < 12; step += 1) {
     let list = null
     try {
@@ -1278,29 +1277,19 @@ async function processTosQueueItem(sess) {
     let res = null
     try { res = await cdpEvaluate(target.webSocketDebuggerUrl, tosHidFindExpr(token), 8000) } catch (e) { res = null }
     if (!res || res.kind === 'none') { await sleep(1200); continue }
-    // If the rotating proxy changed the exit IP since the TOS page loaded, the
-    // reCAPTCHA token is stale and submitting returns BAD_REQUEST. Reload the
-    // TOS page on the new IP and redo quickly (up to 2 times).
-    if (res.kind === 'button' && (sess.tosReloads || 0) < 2) {
-      const nowIp = await proxyEgress(10000)
-      if (nowIp && sess.tosIp && nowIp !== sess.tosIp) {
-        sess.tosReloads = (sess.tosReloads || 0) + 1
-        log(`TOS IP changed ${sess.tosIp} -> ${nowIp}; reloading TOS page (${sess.tosReloads}/2)`)
-        sess.tosIp = nowIp
-        try { await cdpCall(target.webSocketDebuggerUrl, 'Page.reload', {}, 10000) } catch (e) {}
-        await sleep(2500 + Math.random() * 1500)
-        continue
-      }
-      sess.tosIp = nowIp || sess.tosIp
-    }
-    // Give Chromium a moment to push document.title to the OS window name so we
-    // can raise *this* profile's window by token.
-    await sleep(500 + Math.random() * 300)
+    // Keep this fast: the proxy can rotate the exit IP every ~10-20s, and the
+    // TOS submit must happen on the same IP as the page load. No blocking
+    // proxy checks here — just raise + click quickly.
+    await sleep(250 + Math.random() * 150)
     const raised = raiseOctoWindow(token)
     if (/^(FALLBACK|err:|none)/i.test(String(raised))) {
-      log(`TOS queue: ${sess.email} window not focused yet (${raised}); retry`)
-      await sleep(900)
-      continue
+      if (sessions.size <= 1 && !/^none/i.test(String(raised))) {
+        log(`TOS queue: using single-window fallback for ${sess.email} (${raised})`)
+      } else {
+        log(`TOS queue: ${sess.email} window not focused yet (${raised}); retry`)
+        await sleep(700)
+        continue
+      }
     }
     log(`TOS queue: ${sess.email} [${raised}] click ${res.kind} at ${res.sx},${res.sy} covered=${res.covered}`)
     if (process.env.ORCH_TOS_DRYRUN === '1') {
@@ -1310,7 +1299,7 @@ async function processTosQueueItem(sess) {
         hidClick(res.sx, res.sy)
       } catch (e) {
         log(`TOS HID click failed for ${sess.email}: ${e.message}`)
-        await sleep(900)
+        await sleep(700)
         continue
       }
     }
@@ -1319,7 +1308,7 @@ async function processTosQueueItem(sess) {
       log(`TOS submitted for ${sess.email}; hands off, letting OAuth finish`)
       return
     }
-    await sleep(1200 + Math.random() * 800)
+    await sleep(700 + Math.random() * 400)
   }
   log(`TOS queue: gave up on ${sess.email}`)
 }
