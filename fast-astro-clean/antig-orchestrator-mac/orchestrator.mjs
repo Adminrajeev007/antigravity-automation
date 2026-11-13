@@ -1263,6 +1263,7 @@ async function runTosQueue() {
 async function processTosQueueItem(sess) {
   const token = 'AGT' + String(sess.uuid || '').slice(0, 10).replace(/[^A-Za-z0-9]/g, '')
   log(`TOS queue: switching to ${sess.email}`)
+  if (!sess.tosIp) { try { sess.tosIp = await proxyEgress(10000) } catch (e) {} }
   for (let step = 0; step < 12; step += 1) {
     let list = null
     try {
@@ -1277,6 +1278,21 @@ async function processTosQueueItem(sess) {
     let res = null
     try { res = await cdpEvaluate(target.webSocketDebuggerUrl, tosHidFindExpr(token), 8000) } catch (e) { res = null }
     if (!res || res.kind === 'none') { await sleep(1200); continue }
+    // If the rotating proxy changed the exit IP since the TOS page loaded, the
+    // reCAPTCHA token is stale and submitting returns BAD_REQUEST. Reload the
+    // TOS page on the new IP and redo quickly (up to 2 times).
+    if (res.kind === 'button' && (sess.tosReloads || 0) < 2) {
+      const nowIp = await proxyEgress(10000)
+      if (nowIp && sess.tosIp && nowIp !== sess.tosIp) {
+        sess.tosReloads = (sess.tosReloads || 0) + 1
+        log(`TOS IP changed ${sess.tosIp} -> ${nowIp}; reloading TOS page (${sess.tosReloads}/2)`)
+        sess.tosIp = nowIp
+        try { await cdpCall(target.webSocketDebuggerUrl, 'Page.reload', {}, 10000) } catch (e) {}
+        await sleep(2500 + Math.random() * 1500)
+        continue
+      }
+      sess.tosIp = nowIp || sess.tosIp
+    }
     // Give Chromium a moment to push document.title to the OS window name so we
     // can raise *this* profile's window by token.
     await sleep(500 + Math.random() * 300)
