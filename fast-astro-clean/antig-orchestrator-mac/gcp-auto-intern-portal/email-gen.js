@@ -79,6 +79,7 @@
   {indian:true,f:["gurpreet","harpreet","jaspreet","manpreet","navdeep","amrit","jaskaran","arjan","gagan","prabhjot","tejinder","sukhwinder","harjot","meet","ekam","jashan","harman","gurvinder","surinder","kuldeep","jaspal","amarjit","baljit","charanjit","darshan","gurmeet","harsimran","jaskirat","manjeet","navjot","prabh","satnam","surjeet","simran","kiran","raman","jasleen","gurleen","navneet","harleen","manjot","seerat","jasnoor","guneet","kirandeep","simar","amandeep","baljeet","charanpreet","inderpreet","jasmine","kamaljit","manmeet","pardeep","ramanpreet","sukhdeep","tanveer","arpinder","daljeet","harmeet","japneet","jasmeet","manvir","navreet","prabhleen"],l:["singh","kaur","gill","sandhu","grewal","dhillon","bajwa","sidhu","randhawa","mann","brar","sekhon","cheema","athwal","malhi","dosanjh","hayer","kaler","shergill"]},
   {indian:true,f:["john","david","michael","daniel","joseph","thomas","peter","james","samuel","joshua","vincent","anthony","george","paul","steven","matthew","mark","luke","andrew","simon","maria","anna","grace","mary","sarah","rebecca","rachel","elizabeth","christina","angela","julia","sophia","emily","emma","olivia","ava","isabella","mia","charlotte","amelia","abigail","sofia","lily","scarlett"],l:["fernandes","dsouza","pereira","rodrigues","thomas","mathew","george","joseph","jacob","john","williams","brown","taylor","pinto","lobo","sequeira","dsa","noronha","gomes"]}
 ];
+  var LEGIT = ["mail","work","contact","info","hello","inbox","daily","office","real","team","notify","box","studio","labs"];
   var MIDDLE = ["kumar","singh","rajput","kumari","devi","nath","prasad","chandra","ram","shyam","lal","pal","raj","kiran","jot","deep","preet","nand","sai","om","anand","prabhu","sharan","dhar","shankar","narayan","dev","mohan","krishna","kaur"];
   function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
   function clean(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
@@ -89,13 +90,28 @@
       var last = clean(pick(id.l));
       var year = 1980 + Math.floor(Math.random() * 25); // 1980-2004
       var base, candidates;
+      // Always include a random 3-digit token (and often a legit word) so every
+      // email looks unique/human, not a repeated pattern.
+      var num = Math.floor(100 + Math.random() * 900);
+      var word = pick(LEGIT);
       if (id.indian && Math.random() < 0.5) {
         var mid = clean(pick(MIDDLE));
         base = first + "." + mid + "." + last + year;
-        candidates = [base, first + mid + last + year, first + "." + mid + "." + last + "." + year];
+        candidates = [
+          first + "." + mid + "." + last + year + num,
+          first + mid + last + year + num,
+          first + "." + word + "." + last + year,
+          first + "." + mid + "." + last + "." + year + num
+        ];
       } else {
         base = first + "." + last + year;
-        candidates = [base, first + last + year, first + "." + last + "." + year, first + last + year + Math.floor(10 + Math.random() * 90)];
+        candidates = [
+          first + "." + last + year + num,
+          first + last + year + num,
+          first + "." + word + "." + last + year,
+          first + "." + last + "." + word + year,
+          first + last + year + num + word
+        ];
       }
       for (var i = 0; i < candidates.length; i++) if (!used.has(candidates[i])) return candidates[i];
     }

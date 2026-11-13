@@ -508,6 +508,8 @@ async function handleOtp(state) {
           }
           staleCode = c;
           setStatus("Ignoring stale OTP " + c + " — waiting for fresh... (" + (attempt + 1) + ")");
+          // No newer code after ~40s: accept the latest available one.
+          if (attempt >= 8) { code = c; break; }
         } else {
           // No timestamp from API: change-detection fallback.
           // First code seen might be stale; wait for it to change.
@@ -547,6 +549,7 @@ async function handleOtp(state) {
 }
 
 let otpResendCount = 0;
+let otpExpiredResends = 0;
 let blockingErrAt = 0;
 
 // Recovers from OTP/verification dead-ends:
@@ -570,6 +573,32 @@ async function handleBlockingErrors() {
       await humanClick(restart);
       return;
     }
+  }
+
+  // "This code has expired. Resend a new code." -> clear it, resend once, and
+  // re-run handleOtp so it keeps polling dispose.lol every ~5s and uses the
+  // newest code (or the latest available one).
+  const otpExpired = txt.includes("code has expired") ||
+                     (txt.includes("expired") && txt.includes("resend"));
+  if (otpExpired) {
+    blockingErrAt = Date.now();
+    otpFilled = false; otpFilledFor = -1;
+    try {
+      const pin = document.querySelector('input[name="pinInput"]');
+      if (pin) { pin.value = ""; pin.dispatchEvent(new Event("input", { bubbles: true })); }
+    } catch (e) {}
+    const resend = findByText("Resend code") || findByText("Resend");
+    if (resend && otpExpiredResends < 1) {
+      otpExpiredResends += 1;
+      setStatus("OTP expired — resending a new code...");
+      await randDelay(600, 1200);
+      await humanClick(resend);
+      await randDelay(4000, 6000);
+    } else {
+      setStatus("OTP expired — fetching the latest code from the inbox...");
+    }
+    runForCurrentPage(false).catch(() => {});
+    return;
   }
 
   const otpErr = txt.includes("couldn't be verified") || txt.includes("could not be verified") ||
@@ -1751,7 +1780,7 @@ function resetFrameFlags() { stateSelected = false; savedOnce = false; addAddrCl
 let lastUrl = location.href;
 timers.push(setInterval(() => {
   if (!extAlive()) { stopAll(); return; }
-  if (location.href !== lastUrl) { lastUrl = location.href; otpResendCount = 0; setTimeout(() => { runForCurrentPage(false); renderPanel(); }, 2500); }
+  if (location.href !== lastUrl) { lastUrl = location.href; otpResendCount = 0; otpExpiredResends = 0; setTimeout(() => { runForCurrentPage(false); renderPanel(); }, 2500); }
 }, 1500));
 
 // Watch for OTP/verification dead-ends and recover (resend / restart).

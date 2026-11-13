@@ -29,7 +29,7 @@ ORCH_PROXY_CONFIG="$DIR/proxy.astro.json" \
 ORCH_BATCH_TIMEOUT_MS="${ORCH_BATCH_TIMEOUT_MS:-1500000}" \
 ORCH_BATCH_COOLDOWN_MS="${ORCH_BATCH_COOLDOWN_MS:-10000}" \
 ORCH_COMBO=1 \
-EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.40.zip" \
+EXT_ZIP="$BUNDLE/gcp-combo-portal-v1.0.41.zip" \
   "$DIR/run-with-logs-astro.sh"
 
 RUN="$(ls -td "$ROOT"/run-* 2>/dev/null | head -1)"
