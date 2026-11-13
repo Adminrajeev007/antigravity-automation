@@ -82,6 +82,21 @@ const PORT = Number(process.env.ORCH_PORT || 8791)
 const OCTO_HOME = path.join(os.homedir(), '.Octo Browser')
 const SIGNUP_URL = 'https://console.cloud.google.com/freetrial'
 const PROFILE_PREFIX = 'GCP Intern Auto'
+// Unique per-install tag (persists across restarts) so this device only ever
+// deletes the profiles it created — other devices may share the same Octo account.
+function loadRunTag() {
+  if (process.env.ORCH_RUN_TAG) return String(process.env.ORCH_RUN_TAG).replace(/[^A-Za-z0-9]/g, '').slice(0, 24)
+  const file = path.join(os.homedir(), '.antig-instance-id')
+  try {
+    const v = fs.readFileSync(file, 'utf8').trim()
+    if (v) return v.replace(/[^A-Za-z0-9]/g, '').slice(0, 24)
+  } catch {}
+  const base = String(os.hostname()).replace(/[^A-Za-z0-9]/g, '').slice(0, 8) || 'agt'
+  const id = `${base}-${Math.random().toString(36).slice(2, 6)}`
+  try { fs.writeFileSync(file, id, { mode: 0o600 }) } catch {}
+  return id
+}
+const RUN_TAG = loadRunTag()
 const SESSION_TIMEOUT_MS = Number(process.env.ORCH_SESSION_TIMEOUT_MS || 15 * 60 * 1000)
 const AIRPLANE_SECONDS = Number(process.env.ORCH_AIRPLANE_SECONDS || 6)
 const PROXY_CONFIG = loadProxyConfig()
@@ -442,6 +457,68 @@ async function deleteAllProfiles() {
   }
   log(`profile reset: deleted ${total} profile(s)`)
   return total
+}
+
+function isOwnProfile(name) {
+  return String(name || '').toLowerCase().includes(RUN_TAG.toLowerCase())
+}
+
+async function isOwnProfileUuid(uuid) {
+  try {
+    const d = await octo('GET', `/api/v2/profiles/${encodeURIComponent(uuid)}`)
+    const nm = (d && d.data && (d.data.name || d.data.title)) || ''
+    return isOwnProfile(nm)
+  } catch {
+    return false
+  }
+}
+
+// Deletes ONLY this run's profiles (name contains RUN_TAG). Never touches
+// profiles created by another instance sharing the same Octo account, and
+// never restarts Octo.
+async function deleteOwnProfiles() {
+  log(`profile reset: deleting only profiles tagged "${RUN_TAG}" ...`)
+  const uuids = new Set()
+  try {
+    const active = await octo('GET', '/api/profiles/active')
+    const rows = Array.isArray(active) ? active : (active && active.data) || []
+    for (const p of rows) {
+      if (!p.uuid) continue
+      let nm = p.title || p.name || ''
+      if (!nm) {
+        try { const d = await octo('GET', `/api/v2/profiles/${encodeURIComponent(p.uuid)}`); nm = (d && d.data && (d.data.name || d.data.title)) || '' } catch {}
+      }
+      if (!isOwnProfile(nm)) continue
+      uuids.add(p.uuid)
+      try { await octo('POST', '/api/profiles/stop', { uuid: p.uuid }) } catch {}
+    }
+  } catch (e) {
+    log('profile reset: active list failed:', e.message)
+  }
+  await sleep(1500)
+  try {
+    const list = await octo('POST', '/api/v2/profiles/list', { start: 0, length: 200 })
+    const profiles = (list.data && list.data.profiles) || list.profiles || []
+    for (const p of profiles) {
+      if (!p.uuid) continue
+      if (isOwnProfile(p.title || p.name)) uuids.add(p.uuid)
+    }
+  } catch (e) {
+    log('profile reset: list failed:', e.message)
+  }
+  let deleted = 0
+  for (const uuid of uuids) {
+    try { await octo('POST', '/api/profiles/force_stop', { uuid }) } catch {}
+    try {
+      await deleteProfile(uuid, null, 0)
+      deleted += 1
+      log(`profile reset: deleted ${uuid}`)
+    } catch (e) {
+      log(`profile reset: could not delete ${uuid}: ${e.message}`)
+    }
+  }
+  log(`profile reset: deleted ${deleted} own profile(s) (tag ${RUN_TAG})`)
+  return deleted
 }
 
 async function freeProfileSlot() {
@@ -916,7 +993,7 @@ async function retrySignupWithNewProfile(sess) {
   const email = generateBatchEmails(1)[0]
   if (!email) throw new Error('no email available for retry')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '-' + Math.random().toString(36).slice(2, 6)
-  const name = `${PROFILE_PREFIX} ${stamp}`
+  const name = `${PROFILE_PREFIX} ${RUN_TAG} ${stamp}`
   const uuid = await createProfile(name, EXT.compoundId)
   const started = await startProfile(uuid)
   const assigned = await assignViaExtensionPage(started.debugPort, started.wsEndpoint, email, uuid)
@@ -1335,7 +1412,7 @@ async function checkSignupError(sess) {
 
 async function startSession(email) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '-' + Math.random().toString(36).slice(2, 6)
-  const name = `${PROFILE_PREFIX} ${stamp}`
+  const name = `${PROFILE_PREFIX} ${RUN_TAG} ${stamp}`
   const uuid = await createProfile(name, EXT.compoundId)
   let started
   try {
@@ -1358,9 +1435,9 @@ async function startSession(email) {
     return sess
   } catch (e) {
     if (isProfileCreationError(e)) {
-      log(`profile start failed (${e.message}); deleting all profiles and restarting batch`)
-      await deleteAllProfiles()
-      const reset = new Error(`all profiles deleted after profile start error: ${e.message}`)
+      log(`profile start failed (${e.message}); deleting own profiles and restarting batch`)
+      await deleteOwnProfiles()
+      const reset = new Error(`own profiles deleted after profile start error: ${e.message}`)
       reset.restartBatch = true
       throw reset
     }
@@ -1733,11 +1810,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && req.url.startsWith('/delete')) {
     const body = await readBody(req)
-    const extId = String(body.extId || (EXT && EXT.extBase) || '')
     const uuid = String(body.uuid || '')
     try {
-      const target = await resolveProfile(uuid, extId)
-      if (!target) { send(res, 200, { ok: false, error: 'no active profile' }); return }
+      // Only ever delete a profile this instance owns (shared Octo account).
+      const target = uuid && (sessions.has(uuid) || (await isOwnProfileUuid(uuid))) ? uuid : ''
+      if (!target) { send(res, 200, { ok: false, error: 'not my profile' }); return }
       const delay = body.delayMs === undefined ? 3500 : Number(body.delayMs)
       const reason = String(body.reason || 'qr-saved')
       const result = await deleteProfile(target, '', delay)
@@ -1784,7 +1861,7 @@ async function main() {
   try { setInterval(() => flushSheetQueue().catch(() => {}), 15000).unref() } catch {}
   if (process.env.ORCH_RESET_PROFILES === '1') {
     try {
-      await deleteAllProfiles()
+      await deleteOwnProfiles()
     } catch (e) {
       log('startup profile reset failed:', e.message)
     }
