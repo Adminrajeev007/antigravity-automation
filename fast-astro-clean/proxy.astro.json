@@ -1,5 +1,5 @@
 {
-  "url": "http://testuser:testpass@127.0.0.1:1081",
+  "url": "http://testuser:testpass@Desktop-3SD3Q7N.local:1080",
   "ipApiBase": "",
   "ipApiKey": "",
   "pollTimeoutMs": 180000,
