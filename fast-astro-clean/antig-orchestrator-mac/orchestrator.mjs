@@ -705,6 +705,7 @@ function assignExpression(targetEmail, profileUuid) {
     };
     const TARGET_EMAIL = ${JSON.stringify(targetEmail)};
     const PROFILE_UUID = ${JSON.stringify(profileUuid)};
+    const COMBO_PROXY = ${JSON.stringify(PROXY_URL || '')};
     const s = await chrome.storage.local.get(null);
     const interns = (s.interns || []).slice();
     let idx = typeof s.currentIndex === 'number' ? s.currentIndex : 0;
@@ -734,6 +735,7 @@ function assignExpression(targetEmail, profileUuid) {
       addrMap,
       emailHistory: [...(s.emailHistory || []), TARGET_EMAIL].slice(-5000),
       profileUuid: PROFILE_UUID,
+      comboProxyUrl: COMBO_PROXY,
       autoAssignDone: true,
       autoAssign: false,
       autoEmail: false,
@@ -1766,6 +1768,11 @@ const server = http.createServer(async (req, res) => {
       'access-control-allow-headers': 'content-type',
     })
     res.end()
+    return
+  }
+  if (req.method === 'GET' && req.url.startsWith('/config')) {
+    // Single source of truth for the extension's proxy (from proxy.astro.json).
+    send(res, 200, { proxyUrl: PROXY_URL, runTag: RUN_TAG, batch: BATCH_SIZE, extension: EXT ? EXT.version : '' })
     return
   }
   if (req.method === 'GET' && req.url.startsWith('/health')) {

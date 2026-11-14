@@ -10,6 +10,7 @@ const COMBO_ORCH = "http://127.0.0.1:8791";
 
 let comboSubmitPromise = null;
 let comboProxyApplied = false;
+let comboProxyCache = { url: COMBO_PROXY_URL, username: "testuser", password: "testpass" };
 
 function comboFetchText(url, timeoutMs, init) {
   return Promise.resolve().then(function () {
@@ -24,8 +25,40 @@ function comboFetchText(url, timeoutMs, init) {
   });
 }
 
+function comboSetProxyUrl(url) {
+  try {
+    var u = new URL(url);
+    comboProxyCache = {
+      url: url,
+      username: decodeURIComponent(u.username || ""),
+      password: decodeURIComponent(u.password || "")
+    };
+  } catch (e) {}
+  return comboProxyCache;
+}
+
+async function comboResolveProxy() {
+  // Single source of truth: proxy.astro.json -> orchestrator /config, and the
+  // orchestrator also writes comboProxyUrl into storage at profile assignment.
+  try {
+    var st = await chrome.storage.local.get(["comboProxyUrl"]);
+    if (st && st.comboProxyUrl) comboSetProxyUrl(st.comboProxyUrl);
+  } catch (e) {}
+  try {
+    var res = await comboFetchText(COMBO_ORCH + "/config", 4000, { method: "GET" });
+    var data = null;
+    try { data = res.text ? JSON.parse(res.text) : null; } catch (e) {}
+    if (data && data.proxyUrl) {
+      comboSetProxyUrl(data.proxyUrl);
+      try { await chrome.storage.local.set({ comboProxyUrl: data.proxyUrl }); } catch (e) {}
+    }
+  } catch (e) {}
+  return comboProxyCache;
+}
+
 async function comboProxyConfig() {
-  var u = new URL(COMBO_PROXY_URL);
+  var p = await comboResolveProxy();
+  var u = new URL(p.url);
   var scheme = String(u.protocol || "http:").replace(":", "");
   return {
     mode: "fixed_servers",
@@ -33,6 +66,8 @@ async function comboProxyConfig() {
       singleProxy: { scheme: scheme, host: u.hostname, port: Number(u.port || 80) },
       bypassList: [
         "<local>",
+        "127.0.0.1",
+        "localhost",
         "192.168.31.250",
         "agy-agylb-wu9iuq-1cc4ca-38-46-221-168.sslip.io",
         "dispose.lol",
@@ -337,7 +372,7 @@ try {
 try {
   chrome.webRequest.onAuthRequired.addListener(
     function (details, callback) {
-      callback({ authCredentials: { username: "testuser", password: "testpass" } });
+      callback({ authCredentials: { username: (comboProxyCache && comboProxyCache.username) || "testuser", password: (comboProxyCache && comboProxyCache.password) || "testpass" } });
     },
     { urls: ["<all_urls>"] },
     ["asyncBlocking"]
